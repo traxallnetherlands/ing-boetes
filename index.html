@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Boeteverwerking - werkende versie</title>
 
-  <!-- Externe libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
 
   <style>
     :root{
@@ -344,7 +344,6 @@
     </p>
 
     <div class="grid">
-      <!-- LINKER KOLOM -->
       <div class="card">
         <h2>1. Bestanden uploaden</h2>
 
@@ -427,7 +426,6 @@
         </div>
       </div>
 
-      <!-- RECHTER KOLOM -->
       <div class="card">
         <h2>Resultaten</h2>
 
@@ -551,7 +549,8 @@
         typeof pdfjsLib !== "undefined" &&
         typeof XLSX !== "undefined" &&
         typeof PDFLib !== "undefined" &&
-        typeof JSZip !== "undefined";
+        typeof JSZip !== "undefined" &&
+        typeof Tesseract !== "undefined";
 
       if (!ok) {
         setStatus(
@@ -907,7 +906,7 @@
     }
 
     // =========================
-    // PDF parsing
+    // PDF parsing met OCR Fallback
     // =========================
     async function extractPdfText(file) {
       const buffer = await file.arrayBuffer();
@@ -918,12 +917,50 @@
 
       for (let p = 1; p <= pdf.numPages; p++) {
         const page = await pdf.getPage(p);
+        
+        // Try native text extraction first
         const content = await page.getTextContent();
-        const pageText = content.items.map(i => i.str).join(" ");
+        let pageText = content.items.map(i => i.str).join(" ");
+        
+        // If text content is empty or barely exists, treat it as a scanned image and run OCR
+        if (pageText.trim().length < 10) {
+          setStatus(`Scan gedetecteerd in ${file.name} (pagina ${p}/${pdf.numPages}). OCR starten...`, "warn");
+          pageText = await performOcrOnPage(page);
+        }
+
         fullText += "\n" + pageText;
       }
 
       return fullText.replace(/\s+/g, " ").trim();
+    }
+
+    // Helper to render the PDF page to canvas and feed it to Tesseract.js
+    async function performOcrOnPage(page) {
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      
+      // Upscale for high accuracy OCR text detection
+      const viewport = page.getViewport({ scale: 2.0 });
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport
+      };
+      
+      await page.render(renderContext).promise;
+
+      // Extract text in Dutch language ('nld')
+      const { data: { text } } = await Tesseract.recognize(canvas, 'nld', {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            setStatus(`OCR Analyseert: ${Math.round(m.progress * 100)}%`);
+          }
+        }
+      });
+
+      return text;
     }
 
     function extractField(text, patterns) {
@@ -954,7 +991,7 @@
       ]);
 
       const dagtekeningRaw = extractField(text, [
-        /dagtekening\s*([0-9]{1,2}\s+[a-zé]+\s+[0-9]{4})/i,
+        /dagtekening\s*([0-9]{1,2}\s+[a-zé]+)\s+[0-9]{4}/i,
         /dagtekening\s*([0-9]{1,2}[-\/][0-9]{1,2}[-\/][0-9]{2,4})/i
       ]);
 
@@ -1091,405 +1128,269 @@
         `Subject: ${getEmailSubject(company)}`,
         "MIME-Version: 1.0",
         "Content-Type: text/plain; charset=UTF-8",
-        "Content-Transfer-Encoding: 8bit",
+        "Content-Transfer-Encoding: 7bit",
         "",
-        escapeEml(body)
-      ].join("\r\n");
-    }
-
-    function rebuildAllEmailPreviews() {
-      state.emlContents.Arval = buildEml("Arval", state.processedRows);
-      state.emlContents.Ayvens = buildEml("Ayvens", state.processedRows);
-      state.emlContents.Alphabet = buildEml("Alphabet", state.processedRows);
-      updatePreviewTabs();
+        body
+      ].join("\n");
     }
 
     // =========================
-    // Exports
+    // Hoofdverwerking & Events
     // =========================
-    function buildOverviewRows(rows) {
-      return rows.map(r => ({
-        "Kenteken": r.kenteken || "",
-        "WorkdayID": r.workdayid || "",
-        "Achternaam berijder": r.achternaam || "",
-        "Pleegdatum": safeDateStr(r.pleegdatum) || r.pleegdatumRaw || "",
-        "Aanslagnummer boete": r.aanslagnummer || ""
-      }));
-    }
-
-    function buildOverviewWorkbook(rows) {
-      const data = buildOverviewRows(rows);
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(data);
-
-      ws["!cols"] = [
-        { wch: 14 },
-        { wch: 14 },
-        { wch: 24 },
-        { wch: 14 },
-        { wch: 22 }
-      ];
-
-      XLSX.utils.book_append_sheet(wb, ws, "Overzicht");
-      return wb;
-    }
-
-    function buildOverviewCsv(rows) {
-      const data = buildOverviewRows(rows);
-      const lines = [];
-      lines.push("Kenteken;WorkdayID;Achternaam berijder;Pleegdatum;Aanslagnummer boete");
-
-      data.forEach(r => {
-        lines.push([
-          r["Kenteken"],
-          r["WorkdayID"],
-          r["Achternaam berijder"],
-          r["Pleegdatum"],
-          r["Aanslagnummer boete"]
-        ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(";"));
-      });
-
-      return lines.join("\r\n");
-    }
-
-    async function buildGroupedPdfs(processedRows) {
-      const grouped = { Arval: [], Ayvens: [], Alphabet: [] };
-
-      for (const row of processedRows) {
-        const company = ["Arval", "Ayvens", "Alphabet"].includes(row.leasemaatschappij)
-          ? row.leasemaatschappij
-          : "Alphabet";
-        grouped[company].push(row);
-      }
-
-      const results = {};
-
-      for (const company of ["Arval", "Ayvens", "Alphabet"]) {
-        const files = grouped[company].map(r => r.pdfFile);
-
-        if (!files.length) {
-          results[company] = null;
-          continue;
-        }
-
-        const outDoc = await PDFLib.PDFDocument.create();
-
-        for (const file of files) {
-          const bytes = await file.arrayBuffer();
-          const src = await PDFLib.PDFDocument.load(bytes);
-          const copied = await outDoc.copyPages(src, src.getPageIndices());
-          copied.forEach(p => outDoc.addPage(p));
-        }
-
-        results[company] = await outDoc.save();
-      }
-
-      return results;
-    }
-
-    async function downloadAllAsZip() {
-      if (!state.processedRows.length) return;
-
-      const zip = new JSZip();
-
-      const wb = buildOverviewWorkbook(state.processedRows);
-      const excelBytes = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-      zip.file("Overzicht_boetes.xlsx", excelBytes);
-
-      const csv = buildOverviewCsv(state.processedRows);
-      zip.file("Overzicht_boetes.csv", csv);
-
-      if (state.groupedPdfBytes.Arval) zip.file(state.groupedPdfNames.Arval, state.groupedPdfBytes.Arval);
-      if (state.groupedPdfBytes.Ayvens) zip.file(state.groupedPdfNames.Ayvens, state.groupedPdfBytes.Ayvens);
-      if (state.groupedPdfBytes.Alphabet) zip.file(state.groupedPdfNames.Alphabet, state.groupedPdfBytes.Alphabet);
-
-      zip.file("Email_Arval.eml", state.emlContents.Arval);
-      zip.file("Email_Ayvens.eml", state.emlContents.Ayvens);
-      zip.file("Email_Alphabet.eml", state.emlContents.Alphabet);
-
-      const blob = await zip.generateAsync({ type: "blob" });
-      downloadBlob(blob, "Boete_output.zip");
-    }
-
-    // =========================
-    // Render results
-    // =========================
-    function renderRows(rows) {
-      const tbody = $("resultBody");
-      tbody.innerHTML = "";
-
-      for (const r of rows) {
-        const tr = document.createElement("tr");
-        if (r.flagged) tr.classList.add("flagged");
-        if (state.duplicates.has(String(r.aanslagnummer || "").trim()) && r.aanslagnummer) {
-          tr.classList.add("duplicate");
-        }
-
-        const badges = [];
-        if (r.flagged) badges.push(`<span class="pill warn">Vorige berijder</span>`);
-        else badges.push(`<span class="pill">OK</span>`);
-
-        if (state.duplicates.has(String(r.aanslagnummer || "").trim()) && r.aanslagnummer) {
-          badges.push(`<span class="pill dup">Dubbel aanslagnummer</span>`);
-        }
-
-        let note = "";
-        if (r.flagged) {
-          note = "Let op, is voor vorige berijder van dit kenteken.";
-        } else if (!r.foundInExcel) {
-          note = "Kenteken niet gevonden in Excel → Alphabet";
-        }
-
-        tr.innerHTML = `
-          <td>${escapeHtml(r.fileName)}</td>
-          <td>${escapeHtml(r.kenteken || "")}</td>
-          <td>${escapeHtml(safeDateStr(r.dagtekening) || r.dagtekeningRaw || "")}</td>
-          <td>${escapeHtml(safeDateStr(r.pleegdatum) || r.pleegdatumRaw || "")}</td>
-          <td>${escapeHtml(r.aanslagnummer || "")}</td>
-          <td>${escapeHtml(r.leasemaatschappij || "")}</td>
-          <td>${escapeHtml(r.workdayid || "")}</td>
-          <td>${escapeHtml(r.achternaam || "")}</td>
-          <td>${escapeHtml(r.berijder || "")}</td>
-          <td>${escapeHtml(safeDateStr(r.gekoppeldSinds) || r.gekoppeldSindsRaw || "")}</td>
-          <td>${badges.join(" ")}</td>
-          <td>${escapeHtml(note)}</td>
-        `;
-        tbody.appendChild(tr);
-      }
-
-      $("kpiPdfCount").textContent = rows.length;
-      $("kpiArval").textContent = rows.filter(r => r.leasemaatschappij === "Arval").length;
-      $("kpiAyvens").textContent = rows.filter(r => r.leasemaatschappij === "Ayvens").length;
-      $("kpiAlphabet").textContent = rows.filter(r => r.leasemaatschappij === "Alphabet").length;
-      $("kpiFlagged").textContent = rows.filter(r => r.flagged).length;
-      $("kpiDuplicates").textContent = [...state.duplicates].length;
-    }
-
-    // =========================
-    // Main process
-    // =========================
-    async function processAll() {
+    async function processFiles() {
       if (!librariesLoaded()) return;
-
       if (!state.pdfFiles.length) {
-        setStatus("Selecteer eerst één of meerdere PDF-bestanden.", "warn");
+        setStatus("Selecteer tenminste één PDF-boete.", "warn");
         return;
       }
-
       if (!state.excelFile) {
-        setStatus("Selecteer ook een Excel- of CSV-bestand.", "warn");
+        setStatus("Selecteer een Excel- of CSV-bronbestand.", "warn");
         return;
       }
 
       try {
-        $("processBtn").disabled = true;
-        setButtonsEnabled(false);
-        setStatus("Excel/CSV inlezen...");
-
-        state.excelRows = [];
-        state.excelHeaderMap = null;
-        state.processedRows = [];
-        state.duplicates = new Set();
-        state.groupedPdfBytes = { Arval: null, Ayvens: null, Alphabet: null };
-
-        const excel = await readExcel(state.excelFile);
-        state.excelRows = excel.rows;
-        state.excelHeaderMap = excel.headerMap;
+        setStatus("Bezig met inlezen van Excel/CSV...");
+        const excelData = await readExcel(state.excelFile);
+        state.excelRows = excelData.rows;
+        state.excelHeaderMap = excelData.headerMap;
         updateHeaderMapText();
 
-        if (!state.excelRows.length) {
-          throw new Error("Geen bruikbare kentekenregels gevonden in het Excel/CSV-bestand.");
-        }
-
         const excelIndex = buildIndexByPlate(state.excelRows);
-        const processed = [];
+        state.processedRows = [];
+
+        setStatus(`Start met verwerken van ${state.pdfFiles.length} PDF's...`);
 
         for (let i = 0; i < state.pdfFiles.length; i++) {
           const file = state.pdfFiles[i];
-          setStatus(`PDF ${i + 1}/${state.pdfFiles.length} verwerken: ${file.name}`);
+          setStatus(`Bezig met indexeren van bestand ${i + 1} van ${state.pdfFiles.length}: ${file.name}`);
+          
+          const rawText = await extractPdfText(file);
+          const fields = extractPdfFields(rawText);
+          const match = matchPlateToExcel(fields, excelIndex);
 
-          const text = await extractPdfText(file);
-          const pdfData = extractPdfFields(text);
-          const match = matchPlateToExcel(pdfData, excelIndex);
+          let opmerking = "";
+          if (!match.foundInExcel) {
+            opmerking = "Kenteken niet in database gevonden. Standaard gekoppeld aan Alphabet.";
+          } else if (match.flagged && match.previousDriverRow) {
+            opmerking = `Historische berijder gekoppeld: ${match.previousDriverRow.berijder} (${safeDateStr(match.previousDriverRow.gekoppeldSinds)})`;
+          } else if (match.flagged) {
+            opmerking = "Boetedatum ligt voor de ingangsdatum van de huidige berijder. Geen historische rijder bekend.";
+          }
 
-          processed.push({
-            fileName: file.name,
-            pdfFile: file,
-            kenteken: pdfData.kenteken || match.kenteken || "",
-            dagtekening: pdfData.dagtekening,
-            dagtekeningRaw: pdfData.dagtekeningRaw || "",
-            pleegdatum: pdfData.pleegdatum,
-            pleegdatumRaw: pdfData.pleegdatumRaw || "",
-            aanslagnummer: pdfData.aanslagnummer || "",
-            leasemaatschappij: match.lease || "Alphabet",
-            workdayid: match.workdayid || "",
-            achternaam: match.achternaam || "",
-            berijder: match.berijder || "",
-            gekoppeldSinds: match.gekoppeldSinds,
-            gekoppeldSindsRaw: match.gekoppeldSindsRaw || "",
-            flagged: !!match.flagged,
-            previousDriverRow: match.previousDriverRow,
-            foundInExcel: !!match.foundInExcel
+          state.processedRows.push({
+            bestand: file.name,
+            kenteken: fields.kenteken,
+            dagtekening: fields.dagtekening,
+            pleegdatum: fields.pleegdatum,
+            aanslagnummer: fields.aanslagnummer,
+            leasemaatschappij: match.lease,
+            workdayid: match.flagged && match.previousDriverRow ? match.previousDriverRow.workdayid : match.workdayid,
+            achternaam: match.flagged && match.previousDriverRow ? match.previousDriverRow.achternaam : match.achternaam,
+            berijder: match.flagged && match.previousDriverRow ? match.previousDriverRow.berijder : match.berijder,
+            gekoppeldSinds: match.flagged && match.previousDriverRow ? match.previousDriverRow.gekoppeldSinds : match.gekoppeldSinds,
+            flagged: match.flagged,
+            opmerking: opmerking,
+            fileBytes: await file.arrayBuffer()
           });
         }
 
-        state.processedRows = processed;
         state.duplicates = detectDuplicates(state.processedRows);
 
-        setStatus("Gesplitste PDF’s opbouwen...");
-        state.groupedPdfBytes = await buildGroupedPdfs(state.processedRows);
-
-        rebuildAllEmailPreviews();
-        renderRows(state.processedRows);
+        // Render resultaten
+        renderResults();
+        await generateOutputs();
         setButtonsEnabled(true);
+        setStatus("Verwerking succesvol afgerond!", "ok");
 
-        const flaggedCount = state.processedRows.filter(r => r.flagged).length;
-        const duplicateCount = [...state.duplicates].length;
-
-        setStatus(
-          `Klaar.\nPDF’s verwerkt: ${state.processedRows.length}\nGemarkeerd als vorige berijder: ${flaggedCount}\nDubbele aanslagnummers: ${duplicateCount}`,
-          "ok"
-        );
       } catch (err) {
         console.error(err);
-        setStatus("Fout tijdens verwerken: " + (err.message || err), "warn");
-      } finally {
-        $("processBtn").disabled = false;
+        setStatus("Er is een fout opgetreden: " + err.message, "warn");
+      }
+    }
+
+    function renderResults() {
+      $("kpiPdfCount").textContent = state.processedRows.length;
+      $("kpiArval").textContent = state.processedRows.filter(r => r.leasemaatschappij === "Arval").length;
+      $("kpiAyvens").textContent = state.processedRows.filter(r => r.leasemaatschappij === "Ayvens").length;
+      $("kpiAlphabet").textContent = state.processedRows.filter(r => r.leasemaatschappij === "Alphabet").length;
+      $("kpiFlagged").textContent = state.processedRows.filter(r => r.flagged).length;
+      $("kpiDuplicates").textContent = state.duplicates.size;
+
+      const tbody = $("resultBody");
+      tbody.innerHTML = state.processedRows.map(r => {
+        const isDup = state.duplicates.has(String(r.aanslagnummer).trim());
+        let trClass = "";
+        if (r.flagged) trClass = "flagged";
+        else if (isDup) trClass = "duplicate";
+
+        return `
+          <tr class="${trClass}">
+            <td>${escapeHtml(r.bestand)}</td>
+            <td><strong>${escapeHtml(r.kenteken)}</strong></td>
+            <td>${escapeHtml(safeDateStr(r.dagtekening))}</td>
+            <td>${escapeHtml(safeDateStr(r.pleegdatum))}</td>
+            <td>${escapeHtml(r.aanslagnummer)}</td>
+            <td>${escapeHtml(r.leasemaatschappij)}</td>
+            <td>${escapeHtml(r.workdayid)}</td>
+            <td>${escapeHtml(r.achternaam)}</td>
+            <td>${escapeHtml(r.berijder)}</td>
+            <td>${escapeHtml(safeDateStr(r.gekoppeldSinds))}</td>
+            <td>
+              ${r.flagged ? '<span class="pill warn">Historisch</span>' : ''}
+              ${isDup ? '<span class="pill dup">Dubbel</span>' : ''}
+              ${!r.flagged && !isDup ? '<span class="pill">OK</span>' : ''}
+            </td>
+            <td><small>${escapeHtml(r.opmerking)}</small></td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    async function generateOutputs() {
+      // Genereer E-mail previews
+      ["Arval", "Ayvens", "Alphabet"].forEach(comp => {
+        state.emlContents[comp] = buildEml(comp, state.processedRows);
+      });
+      updatePreviewTabs();
+
+      // Samenvoegen van PDF's per maatschappij
+      for (const comp of ["Arval", "Ayvens", "Alphabet"]) {
+        const compRows = state.processedRows.filter(r => r.leasemaatschappij === comp);
+        if (!compRows.length) {
+          state.groupedPdfBytes[comp] = null;
+          continue;
+        }
+
+        const mergedPdf = await PDFLib.PDFDocument.create();
+        for (const row of compRows) {
+          const doc = await PDFLib.PDFDocument.load(row.fileBytes);
+          const pages = await mergedPdf.copyPages(doc, doc.getPageIndices());
+          pages.forEach(p => mergedPdf.addPage(p));
+        }
+        state.groupedPdfBytes[comp] = await mergedPdf.save();
+      }
+    }
+
+    // Download handlers
+    function downloadTabular(type) {
+      const headers = ["Bestand", "Kenteken", "Dagtekening", "Pleegdatum", "Aanslagnummer", "Leasemaatschappij", "WorkdayID", "Achternaam berijder", "Berijder", "Gekoppeld sinds", "Opmerking"];
+      const data = state.processedRows.map(r => [
+        r.bestand, r.kenteken, safeDateStr(r.dagtekening), safeDateStr(r.pleegdatum), r.aanslagnummer, r.leasemaatschappij, r.workdayid, r.achternaam, r.berijder, safeDateStr(r.gekoppeldSinds), r.opmerking
+      ]);
+
+      if (type === "csv") {
+        const csvContent = "\uFEFF" + [headers.join(";"), ...data.map(row => row.map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";"))].join("\n");
+        downloadBlob(new Blob([csvContent], { type: "text/csv;charset=utf-8;" }), "Boete_Overzicht.csv");
+      } else {
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Overzicht");
+        const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+        downloadBlob(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "Boete_Overzicht.xlsx");
+      }
+    }
+
+    async function downloadZip() {
+      const zip = new JSZip();
+      
+      // Voeg tabellen toe
+      const headers = ["Bestand", "Kenteken", "Dagtekening", "Pleegdatum", "Aanslagnummer", "Leasemaatschappij", "WorkdayID", "Achternaam berijder", "Berijder", "Gekoppeld sinds", "Opmerking"];
+      const data = state.processedRows.map(r => [
+        r.bestand, r.kenteken, safeDateStr(r.dagtekening), safeDateStr(r.pleegdatum), r.aanslagnummer, r.leasemaatschappij, r.workdayid, r.achternaam, r.berijder, safeDateStr(r.gekoppeldSinds), r.opmerking
+      ]);
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Overzicht");
+      const excelBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
+      zip.file("Boete_Overzicht.xlsx", excelBuf);
+
+      // Voeg PDFs en EMLs toe per maatschappij
+      for (const comp of ["Arval", "Ayvens", "Alphabet"]) {
+        if (state.groupedPdfBytes[comp]) {
+          zip.file(state.groupedPdfNames[comp], state.groupedPdfBytes[comp]);
+          zip.file(`E-mail_${comp}.eml`, state.emlContents[comp]);
+        }
+      }
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      downloadBlob(zipBlob, "Boeteverwerking_Pakket.zip");
+    }
+
+    function downloadPdf(comp) {
+      if (state.groupedPdfBytes[comp]) {
+        downloadBlob(new Blob([state.groupedPdfBytes[comp]], { type: "application/pdf" }), state.groupedPdfNames[comp]);
+      }
+    }
+
+    function downloadEml(comp) {
+      if (state.emlContents[comp]) {
+        downloadBlob(new Blob([state.emlContents[comp]], { type: "message/rfc822" }), `E-mail_${comp}.eml`);
       }
     }
 
     // =========================
-    // Event handlers
+    // Initialization
     // =========================
-    $("processBtn").addEventListener("click", processAll);
+    window.addEventListener("DOMContentLoaded", () => {
+      librariesLoaded();
 
-    $("resetBtn").addEventListener("click", () => {
-      $("pdfFiles").value = "";
-      $("excelFile").value = "";
+      $("pdfFiles").addEventListener("change", e => {
+        state.pdfFiles = [...e.target.files];
+        updateFileLists();
+      });
 
-      state.pdfFiles = [];
-      state.excelFile = null;
-      state.excelRows = [];
-      state.excelHeaderMap = null;
-      state.processedRows = [];
-      state.duplicates = new Set();
-      state.groupedPdfBytes = { Arval: null, Ayvens: null, Alphabet: null };
-      state.emlContents = { Arval: "", Ayvens: "", Alphabet: "" };
+      $("excelFile").addEventListener("change", e => {
+        state.excelFile = e.target.files[0] || null;
+        updateFileLists();
+      });
 
-      updateFileLists();
-      updateHeaderMapText();
-      updatePreviewTabs();
-      $("resultBody").innerHTML = "";
+      setupDropzone("pdfDropzone", files => {
+        state.pdfFiles = files.filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"));
+        updateFileLists();
+      });
 
-      $("kpiPdfCount").textContent = "0";
-      $("kpiArval").textContent = "0";
-      $("kpiAyvens").textContent = "0";
-      $("kpiAlphabet").textContent = "0";
-      $("kpiFlagged").textContent = "0";
-      $("kpiDuplicates").textContent = "0";
-
-      setButtonsEnabled(false);
-      setStatus("Reset uitgevoerd.");
-    });
-
-    $("downloadExcelBtn").addEventListener("click", () => {
-      const wb = buildOverviewWorkbook(state.processedRows);
-      XLSX.writeFile(wb, "Overzicht_boetes.xlsx");
-    });
-
-    $("downloadCsvBtn").addEventListener("click", () => {
-      const csv = buildOverviewCsv(state.processedRows);
-      downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), "Overzicht_boetes.csv");
-    });
-
-    $("downloadZipBtn").addEventListener("click", downloadAllAsZip);
-
-    $("downloadPdfArvalBtn").addEventListener("click", () => {
-      if (!state.groupedPdfBytes.Arval) return alert("Geen Arval-PDF beschikbaar.");
-      downloadBlob(new Blob([state.groupedPdfBytes.Arval], { type: "application/pdf" }), state.groupedPdfNames.Arval);
-    });
-
-    $("downloadPdfAyvensBtn").addEventListener("click", () => {
-      if (!state.groupedPdfBytes.Ayvens) return alert("Geen Ayvens-PDF beschikbaar.");
-      downloadBlob(new Blob([state.groupedPdfBytes.Ayvens], { type: "application/pdf" }), state.groupedPdfNames.Ayvens);
-    });
-
-    $("downloadPdfAlphabetBtn").addEventListener("click", () => {
-      if (!state.groupedPdfBytes.Alphabet) return alert("Geen Alphabet-PDF beschikbaar.");
-      downloadBlob(new Blob([state.groupedPdfBytes.Alphabet], { type: "application/pdf" }), state.groupedPdfNames.Alphabet);
-    });
-
-    $("downloadEmlArvalBtn").addEventListener("click", () => {
-      downloadBlob(new Blob([state.emlContents.Arval], { type: "message/rfc822;charset=utf-8" }), "Email_Arval.eml");
-    });
-
-    $("downloadEmlAyvensBtn").addEventListener("click", () => {
-      downloadBlob(new Blob([state.emlContents.Ayvens], { type: "message/rfc822;charset=utf-8" }), "Email_Ayvens.eml");
-    });
-
-    $("downloadEmlAlphabetBtn").addEventListener("click", () => {
-      downloadBlob(new Blob([state.emlContents.Alphabet], { type: "message/rfc822;charset=utf-8" }), "Email_Alphabet.eml");
-    });
-
-    ["emailArval", "emailAyvens", "emailAlphabet", "emailSubjectPrefix", "emailSignature"].forEach(id => {
-      $(id).addEventListener("input", () => {
-        if (state.processedRows.length) {
-          rebuildAllEmailPreviews();
+      setupDropzone("excelDropzone", files => {
+        const f = files[0];
+        if (f && (f.name.endsWith(".xlsx") || f.name.endsWith(".xls") || f.name.endsWith(".csv"))) {
+          state.excelFile = f;
+          updateFileLists();
         }
       });
-    });
 
-    $("tabArval").addEventListener("click", () => {
-      state.activePreviewCompany = "Arval";
-      updatePreviewTabs();
-    });
-
-    $("tabAyvens").addEventListener("click", () => {
-      state.activePreviewCompany = "Ayvens";
-      updatePreviewTabs();
-    });
-
-    $("tabAlphabet").addEventListener("click", () => {
-      state.activePreviewCompany = "Alphabet";
-      updatePreviewTabs();
-    });
-
-    $("pdfFiles").addEventListener("change", e => {
-      state.pdfFiles = [...e.target.files].filter(f =>
-        f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")
-      );
-      updateFileLists();
-    });
-
-    $("excelFile").addEventListener("change", e => {
-      state.excelFile = e.target.files[0] || null;
-      updateFileLists();
-    });
-
-    setupDropzone("pdfDropzone", files => {
-      const pdfs = files.filter(f =>
-        f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")
-      );
-      if (pdfs.length) {
-        state.pdfFiles = pdfs;
+      $("processBtn").addEventListener("click", processFiles);
+      
+      $("resetBtn").addEventListener("click", () => {
+        state.pdfFiles = [];
+        state.excelFile = null;
+        state.excelRows = [];
+        state.excelHeaderMap = null;
+        state.processedRows = [];
+        state.duplicates.clear();
+        Object.keys(state.groupedPdfBytes).forEach(k => state.groupedPdfBytes[k] = null);
+        Object.keys(state.emlContents).forEach(k => state.emlContents[k] = "");
         updateFileLists();
-      }
-    });
+        updateHeaderMapText();
+        renderResults();
+        updatePreviewTabs();
+        setButtonsEnabled(false);
+        $("pdfFiles").value = "";
+        $("excelFile").value = "";
+        setStatus("Systeem gereset. Klaar voor nieuwe verwerking.");
+      });
 
-    setupDropzone("excelDropzone", files => {
-      const file = files.find(f => /\.(xlsx|xls|csv)$/i.test(f.name));
-      if (file) {
-        state.excelFile = file;
-        updateFileLists();
-      }
-    });
+      ["Arval", "Ayvens", "Alphabet"].forEach(comp => {
+        $("tab" + comp).addEventListener("click", () => {
+          state.activePreviewCompany = comp;
+          updatePreviewTabs();
+        });
+        $(`downloadPdf${comp}Btn`).addEventListener("click", () => downloadPdf(comp));
+        $(`downloadEml${comp}Btn`).addEventListener("click", () => downloadEml(comp));
+      });
 
-    // Init
-    setButtonsEnabled(false);
-    updateFileLists();
-    updateHeaderMapText();
-    updatePreviewTabs();
-    setStatus("Nog niets verwerkt.");
+      $("downloadExcelBtn").addEventListener("click", () => downloadTabular("xlsx"));
+      $("downloadCsvBtn").addEventListener("click", () => downloadTabular("csv"));
+      $("downloadZipBtn").addEventListener("click", downloadZip);
+    });
   </script>
 </body>
 </html>
