@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+
+<html lang="nl">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>PDF Boete Verwerker & Matcher</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+   
+
+    <style>
+
+        body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f6f9; color: #333; }
+
+        h1, h2 { color: #1a365d; }
+
+        .container { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+
+        .section { margin-bottom: 20px; padding: 15px; border: 1px solid #e2e8f0; border-radius: 6px; }
+
+        label { font-weight: bold; display: block; margin-bottom: 8px; }
+
+        input[type="file"] { display: block; margin-bottom: 10px; }
+
+        button { background-color: #2b6cb0; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; transition: background 0.2s; }
+
+        button:hover { background-color: #2c5282; }
+
+        button:disabled { background-color: #cbd5e0; cursor: not-allowed; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
+
+        th, td { border: 1px solid #cbd5e0; padding: 10px; text-align: left; }
+
+        th { background-color: #edf2f7; }
+
+        .warning-row { background-color: #fed7d7 !important; color: #9b2c2c; font-weight: bold; }
+
+        .actions { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+        .email-box { background: #edf2f7; padding: 15px; margin-top: 15px; border-left: 4px solid #2b6cb0; white-space: pre-wrap; border-radius: 4px; }
+
+    </style>
+
+</head>
+
+<body>
+
+ 
+
+<div class="container">
+
+    <h1>Boete Verwerker & Matcher</h1>
+
+    <p>Laad de lease-master Excel op en vervolgens de PDF-boetes om de data te matchen en exports te genereren.</p>
+
+   
+
+    <div class="section">
+
+        <label for="excelFile">1. Upload Lease-Master Excel (.xlsx)</label>
+
+        <input type="file" id="excelFile" accept=".xlsx, .xls">
+
+    </div>
+
+ 
+
+    <div class="section">
+
+        <label for="pdfFiles">2. Upload PDF Boete(s) (Meerdere toegestaan)</label>
+
+        <input type="file" id="pdfFiles" accept=".pdf" multiple disabled>
+
+    </div>
+
+ 
+
+    <button id="processBtn" disabled>Verwerk Bestanden</button>
+
+ 
+
+    <div id="resultsSection" style="display:none;">
+
+        <h2>Resultaten Overzicht</h2>
+
+        <table id="resultsTable">
+
+            <thead>
+
+                <tr>
+
+                    <th>Kenteken</th>
+
+                    <th>Aanslagnummer</th>
+
+                    <th>Dagtekening (Pleegdatum)</th>
+
+                    <th>Leasemaatschappij</th>
+
+                    <th>Berijder</th>
+
+                    <th>Gekoppeld Sinds</th>
+
+                    <th>Status / Melding</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody></tbody>
+
+        </table>
+
+ 
+
+        <div class="actions">
+
+            <button id="downloadExcelBtn">Download Excel Overzicht</button>
+
+            <button id="downloadPdfsBtn">Genereer Gecombineerde PDF's per LeaseMij</button>
+
+        </div>
+
+ 
+
+        <h2>Gegenereerde E-mails</h2>
+
+        <div id="emailTemplates"></div>
+
+    </div>
+
+</div>
+
+ 
+
+<script>
+
+    // Configuratie voor PDF.js
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+ 
+
+    let excelData = [];
+
+    let processedRows = [];
+
+ 
+
+    const excelInput = document.getElementById('excelFile');
+
+    const pdfInput = document.getElementById('pdfFiles');
+
+    const processBtn = document.getElementById('processBtn');
+
+    const resultsSection = document.getElementById('resultsSection');
+
+    const resultsTableBody = document.querySelector('#resultsTable tbody');
+
+ 
+
+    // 1. Excel Inlezen
+
+    excelInput.addEventListener('change', function(e) {
+
+        const file = e.target.files[0];
+
+        if (!file) return;
+
+ 
+
+        const reader = new FileReader();
+
+        reader.onload = function(evt) {
+
+            const data = evt.target.result;
+
+            const workbook = XLSX.read(data, { type: 'binary', cellDates: true });
+
+            const firstSheetName = workbook.SheetNames[0];
+
+            const worksheet = workbook.Sheets[firstSheetName];
+
+           
+
+            // Converteer naar JSON objecten
+
+            excelData = XLSX.utils.sheet_to_json(worksheet);
+
+           
+
+            // Activeer PDF input zodra Excel bekend is
+
+            pdfInput.disabled = false;
+
+            alert('Lease-master succesvol ingeladen! Je kunt nu de PDF\'s uploaden.');
+
+        };
+
+        reader.readAsBinaryString(file);
+
+    });
+
+ 
+
+    // Activeer verwerkknop als er PDF's zijn gekozen
+
+    pdfInput.addEventListener('change', function() {
+
+        if (this.files.length > 0) processBtn.disabled = false;
+
+    });
+
+ 
+
+    // 2. Hoofdproces bij klikken op de knop
+
+    processBtn.addEventListener('click', async function() {
+
+        processedRows = [];
+
+        resultsTableBody.innerHTML = '';
+
+        const files = pdfInput.files;
+
+ 
+
+        for (let i = 0; i < files.length; i++) {
+
+            const file = files[i];
+
+            const pdfText = await extractTextFromPdf(file);
+
+           
+
+            // Regex patronen (Pas deze eventueel aan op basis van de exacte lay-out van de boetes)
+
+            const kenteken = matchKenteken(pdfText);
+
+            const dagtekening = matchDagtekening(pdfText);
+
+            const aanslagnummer = matchAanslagnummer(pdfText);
+
+ 
+
+            // Zoek match in Excel data
+
+            const match = findExcelMatch(kenteken);
+
+ 
+
+            let leasemaatschappij = "Alphabet"; // Default als niet gevonden
+
+            let berijder = "Onbekend";
+
+            let gekoppeldSinds = null;
+
+            let workdayId = "";
+
+            let achternaam = "Onbekend";
+
+ 
+
+            if (match) {
+
+                // Flexibele kolomnamen mapping (hoofdletterongevoelig)
+
+                leasemaatschappij = match['Leasemaatschappij'] || match['leasemaatschappij'] || match['LeaseMij'] || "Alphabet";
+
+                berijder = match['Berijder'] || match['Naam'] || match['Volledige naam'] || "Onbekend";
+
+                gekoppeldSinds = match['Gekoppeld Sinds'] || match['Ingegaan op'] || match['Datum gekoppeld'] || null;
+
+                workdayId = match['WorkdayID'] || match['Workday ID'] || match['Personeelsnummer'] || "";
+
+                achternaam = match['Achternaam'] || berijder.split(' ').pop() || "";
+
+            }
+
+ 
+
+            // Controleer datums voor de waarschuwing
+
+            let isVorigeBerijder = false;
+
+            if (gekoppeldSinds && dagtekening) {
+
+                const datumGekoppeld = new Date(gekoppeldSinds);
+
+                const datumBoete = parseDutchDate(dagtekening);
+
+               
+
+                if (datumGekoppeld > datumBoete) {
+
+                    isVorigeBerijder = true;
+
+                }
+
+            }
+
+ 
+
+            processedRows.push({
+
+                kenteken: kenteken || "ONBEKEND",
+
+                dagtekening: dagtekening || "ONBEKEND",
+
+                aanslagnummer: aanslagnummer || "ONBEKEND",
+
+                leasemaatschappij: leasemaatschappij,
+
+                berijder: berijder,
+
+                gekoppeldSinds: gekoppeldSinds ? formatDate(new Date(gekoppeldSinds)) : "-",
+
+                workdayId: workdayId,
+
+                achternaam: achternaam,
+
+                isVorigeBerijder: isVorigeBerijder,
+
+                fileName: file.name
+
+            });
+
+        }
+
+ 
+
+        renderTable();
+
+        generateEmails();
+
+        resultsSection.style.display = 'block';
+
+    });
+
+ 
+
+    // Helper: Extraheer tekst uit PDF
+
+    async function extractTextFromPdf(file) {
+
+        const arrayBuffer = await file.arrayBuffer();
+
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+        let fullText = "";
+
+       
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+
+            const page = await pdf.getPage(i);
+
+            const textContent = await page.getTextContent();
+
+            const pageText = textContent.items.map(item => item.str).join(" ");
+
+            fullText += pageText + "\n";
+
+        }
+
+        return fullText;
+
+    }
+
+ 
+
+    // Helper: Regex Matchers
+
+    function matchKenteken(text) {
+
+        // Zoekt naar Nederlandse kentekenpatronen (bijv. XX-999-X, 99-XXX-9, etc.)
+
+        const regex = /\b[A-Z0-9]{2}-[A-Z0-9]{3}-[A-Z0-9]{1}\b|\b[0-9]{2}-[A-Z]{3}-[0-9]{1}\b|\b[A-Z]{2}-[0-9]{3}-[A-Z]\b|\b[A-Z]{3}-[0-9]{2}-[A-Z]\b/i;
+
+        const match = text.match(regex);
+
+        return match ? match[0].toUpperCase() : null;
+
+    }
+
+ 
+
+    function matchDagtekening(text) {
+
+        // Zoekt naar datums zoals 12-04-2026 of 12 april 2026
+
+        const regex = /\b\d{2}[-/\s](?:januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december|\d{2})[-/\s]\d{4}\b/i;
+
+        const match = text.match(regex);
+
+        return match ? match[0] : null;
+
+    }
+
+ 
+
+    function matchAanslagnummer(text) {
+
+        // Zoekt specifiek naar CJIB aanslagnummers (vaak 16 cijfers beginnend met een 0 of herkenbaar label)
+
+        const regex = /(?:aanslagnummer|beschikkingsnummer|kenmerk)[:\s]*([0-9\s]{10,20})/i;
+
+        const match = text.match(regex);
+
+        return match ? match[1].replace(/\s/g, '') : null;
+
+    }
+
+ 
+
+    function findExcelMatch(kenteken) {
+
+        if (!kenteken || !excelData.length) return null;
+
+        const cleanKenteken = kenteken.replace(/-/g, '').toUpperCase();
+
+       
+
+        return excelData.find(row => {
+
+            // Zoek naar een kolom die op 'kenteken' lijkt
+
+            for (let key in row) {
+
+                if (key.toLowerCase().includes('kenteken')) {
+
+                    const val = String(row[key]).replace(/-/g, '').toUpperCase();
+
+                    if (val === cleanKenteken) return true;
+
+                }
+
+            }
+
+            return false;
+
+        });
+
+    }
+
+ 
+
+    function parseDutchDate(dateStr) {
+
+        const months = {
+
+            januari: 0, februari: 1, maart: 2, april: 3, mei: 4, juni: 5,
+
+            juli: 6, augustus: 7, september: 8, oktober: 9, november: 10, december: 11
+
+        };
+
+        const parts = dateStr.split(/[-/\s]/);
+
+        if(parts.length === 3) {
+
+            let day = parseInt(parts[0], 10);
+
+            let month = months[parts[1].toLowerCase()];
+
+            if (month === undefined) month = parseInt(parts[1], 10) - 1;
+
+            let year = parseInt(parts[2], 10);
+
+            return new Date(year, month, day);
+
+        }
+
+        return new Date(dateStr);
+
+    }
+
+ 
+
+    function formatDate(date) {
+
+        if (isNaN(date)) return "-";
+
+        return date.toLocaleDateString('nl-NL');
+
+    }
+
+ 
+
+    // 3. Toon resultaten in de HTML tabel
+
+    function renderTable() {
+
+        processedRows.forEach(row => {
+
+            const tr = document.createElement('tr');
+
+            if (row.isVorigeBerijder) {
+
+                tr.classList.add('warning-row');
+
+            }
+
+ 
+
+            tr.innerHTML = `
+
+                <td>${row.kenteken}</td>
+
+                <td>${row.aanslagnummer}</td>
+
+                <td>${row.dagtekening}</td>
+
+                <td>${row.leasemaatschappij}</td>
+
+                <td>${row.berijder}</td>
+
+                <td>${row.gekoppeldSinds}</td>
+
+                <td>${row.isVorigeBerijder ? 'Let op: is voor vorige berijder van dit kenteken!' : 'OK'}</td>
+
+            `;
+
+            resultsTableBody.appendChild(tr);
+
+        });
+
+    }
+
+ 
+
+    // 4. Genereer Email Teksten per Leasemaatschappij
+
+    function generateEmails() {
+
+        const emailDiv = document.getElementById('emailTemplates');
+
+        emailDiv.innerHTML = '';
+
+ 
+
+        const maatschappijen = ['Arval', 'Ayvens', 'Alphabet'];
+
+ 
+
+        maatschappijen.forEach(mij => {
+
+            const mijRows = processedRows.filter(r => r.leasemaatschappij.toLowerCase().includes(mij.toLowerCase()));
+
+            if (mijRows.length === 0) return;
+
+ 
+
+            let emailTekst = `Goedendag,\n\nzoals besproken graag deze boetes in behandeling nemen en betalen voor ING.\n`;
+
+           
+
+            const vorigeBerijdersMij = mijRows.filter(r => r.isVorigeBerijder);
+
+            if (vorigeBerijdersMij.length > 0) {
+
+                const kentekensStr = vorigeBerijdersMij.map(r => r.kenteken).join(', ');
+
+                emailTekst += `\nBij kentekens ${kentekensStr} graag belasten op werknemer die op dit kenteken stond geregistreerd op de pleegdatum.\n`;
+
+            }
+
+ 
+
+            const box = document.createElement('div');
+
+            box.className = 'email-box';
+
+            box.innerHTML = `<strong>Aan: ${mij}</strong><br><br>${emailTekst}`;
+
+            emailDiv.appendChild(box);
+
+        });
+
+    }
+
+ 
+
+    // 5. Download Excel Overzicht Export (Kolom A t/m E)
+
+    document.getElementById('downloadExcelBtn').addEventListener('click', function() {
+
+        const exportData = processedRows.map(row => ({
+
+            "kenteken": row.kenteken,
+
+            "WorkdayID": row.workdayId,
+
+            "Achternaam berijder": row.achternaam,
+
+            "pleegdatum": row.dagtekening,
+
+            "aanslagnummer boete": row.aanslagnummer
+
+        }));
+
+ 
+
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+        const workbook = XLSX.utils.book_new();
+
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Boete Overzicht");
+
+       
+
+        XLSX.writeFile(workbook, "Boete_Overzicht_ING.xlsx");
+
+    });
+
+ 
+
+    // 6. Genereer Verzamel-PDF's per Leasemaatschappij
+
+    document.getElementById('downloadPdfsBtn').addEventListener('click', function() {
+
+        const { jsPDF } = window.jspdf;
+
+        const maatschappijen = ['Arval', 'Ayvens', 'Alphabet'];
+
+ 
+
+        maatschappijen.forEach(mij => {
+
+            const mijRows = processedRows.filter(r => r.leasemaatschappij.toLowerCase().includes(mij.toLowerCase()));
+
+            if (mijRows.length === 0) return;
+
+ 
+
+            const doc = new jsPDF();
+
+            doc.setFont("Helvetica", "bold");
+
+            doc.setFontSize(18);
+
+            doc.text(`Boetes Overzicht - ${mij}`, 15, 20);
+
+           
+
+            doc.setFont("Helvetica", "normal");
+
+            doc.setFontSize(11);
+
+            doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 15, 28);
+
+            doc.line(15, 32, 195, 32);
+
+ 
+
+            let yPos = 42;
+
+            mijRows.forEach((row, index) => {
+
+                if (yPos > 270) { doc.addPage(); yPos = 20; }
+
+               
+
+                doc.setFont("Helvetica", "bold");
+
+                doc.text(`${index + 1}. Kenteken: ${row.kenteken}`, 15, yPos);
+
+                doc.setFont("Helvetica", "normal");
+
+                doc.text(`Aanslagnummer: ${row.aanslagnummer}`, 15, yPos + 6);
+
+                doc.text(`Pleegdatum: ${row.dagtekening}`, 15, yPos + 12);
+
+                doc.text(`Berijder: ${row.berijder} (${row.isVorigeBerijder ? 'VORIGE BERIJDER' : 'HUIDIGE BERIJDER'})`, 15, yPos + 18);
+
+                doc.text(`Bronbestand: ${row.fileName}`, 15, yPos + 24);
+
+               
+
+                yPos += 35;
+
+            });
+
+ 
+
+            doc.save(`Boetes_Overzicht_${mij}.pdf`);
+
+        });
+
+    });
+
+</script>
+
+ 
+
+</body>
+
+</html>
