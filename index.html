@@ -1,310 +1,75 @@
-
-Conversation with Gemini
-Ik wil een HTML voor een repository in Github hebben.
-
-In deze HTML wil ik twee soorten bestanden kunnen uploaden: PDF-bestanden (meerdere) en één excel bestand (Full Fleetoverview).
-
-De Pdf-bestanden zijn boetes met kentekens erop. Deze kunnen van verschillende gemeentes zijn en verschillen dus in layout. In deze bestanden moet specifieke data worden opgezocht.
-
-Het Full Fleetoverview is een excel-bestand met een overzicht van het wagenpark. In deze bestanden moet specifieke data worden opgezocht aan de hand van de kentekens op de boetes.
-
-Hieronder de gewenste excel-output, wat er gezocht moet worden in de bestanden en in welk bestand gezocht moet worden. Ik wil een excel-export kunnen downloaden van dit resultaat.
-
-
-
-
-
-Output: Zoeken in: Bron:
-
-Kenteken kolom 'License Plate' Data uit Full Fleetoverview
-
-Naam berijder kolom 'Driver Name' Data uit Full Fleetoverview
-
-Workday ID kolom 'Driver ID' Data uit Full Fleetoverview
-
-Berijder vanaf kolom 'Driver since' Data uit Full Fleetoverview
-
-Leasemaatschappij kolom 'Supplier' Data uit Full Fleetoverview
-
-Aanslagnummer zoeken in PDF Data uit PDF
-
-Datum overtreding zoeken in PDF Data uit PDF
-
-Status Hierin moet komen te staan: "LET OP: Ten tijde van deze gereden boete was een andere berijder actief" wanneer de datum in kolom 'Driver since' ná de boetedatum valt. Wanneer niet dit niet het geval is mag de cel leegblijven.
-
-Ik heb een volledige, stand-alone HTML-applicatie voor u gebouwd die direct in een GitHub repository geplaatst kan worden (bijvoorbeeld als index.html).
-
-Deze applicatie draait volledig in de browser van de gebruiker (client-side). Dit betekent dat privacygevoelige gegevens zoals wagenparkoverzichten en boetes nooit naar een externe server worden verstuurd, wat cruciaal is voor de AVG/GDPR-wetgeving binnen fleetmanagement.
-
-Functionaliteiten van deze HTML:
-Meerdere PDF-boetes uploaden: Maakt gebruik van PDF.js om tekst uit de geüploade PDF's te scannen. Het script zoekt via patronen (RegEx) naar Nederlandse kentekencombinaties, aanslagnummers en overtredingsdatums, ongeacht de lay-out van de gemeente.
-
-Full Fleetoverview inlezen: Maakt gebruik van SheetJS (xlsx.js) om uw Excel-bestand direct uit te lezen op basis van de kolomnamen die u heeft gespecificeerd.
-
-Slimme matching & Business Logic: Matcht de boete aan de juiste berijder. Als de datum van de overtreding vóór de datum in 'Driver since' (Berijder vanaf) ligt, wordt de cel Status automatisch gevuld met de door u gewenste waarschuwing: "LET OP: Ten tijde van deze gereden boete was een andere berijder actief".
-
-Excel-export: Na verwerking kunt u met één druk op de knop een kant-en-klaar, netjes geformatteerd nieuw Excel-bestand (Boetes_Match_Resultaat.xlsx) downloaden met exact de kolommen en data die u heeft gevraagd.
-
-Huisstijl: De applicatie is voorzien van een strakke, professionele interface met subtiele oranje accenten (#ED8B00), passend bij uw voorkeursstijl.
-
-Hieronder vindt u het bestand dat u direct kunt downloaden of kopiëren naar uw GitHub repository:
-HTML icon
- index 
- HTML 
-
-Hoe u dit in GitHub plaatst:
-Maak een nieuwe repository aan in GitHub (bijv. fleet-fine-matcher).
-
-Voeg een nieuw bestand toe genaamd index.html en plak de code uit het gegenereerde bestand hierin.
-
-Ga binnen de repository naar Settings -> Pages.
-
-Kies bij Build and deployment onder Source voor Deploy from a branch.
-
-Selecteer de main (of master) branch en klik op Save.
-
-Na een minuut is uw tool live te gebruiken via een unieke github.io URL (bijv. https://uwgebruikersnaam.github.io/fleet-fine-matcher/).
-
-Tips voor het Excel-bronbestand (Full Fleetoverview):
-Het script zoekt slim naar kolomnamen. Zorg ervoor dat uw Fleetoverview de volgende kolomnamen bevat (hoofdletters of spaties maken niet uit, het script converteert deze automatisch op de achtergrond):
-
-License Plate of Kenteken
-
-Driver Name of Naam berijder
-
-Driver ID of Workday ID
-
-Driver since of Berijder vanaf
-
-Supplier of Leasemaatschappij
-
-
-
-
-Gemini is AI and can make mistakes, including about people. Your privacy & GeminiOpens in a new window
-
 <!DOCTYPE html>
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fleet Fine Matcher & Data Extractor</title>
-    <!-- Include SheetJS for Excel parsing and export -->
+    <title>Fleet Fine Matcher & Data Extractor v2</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <!-- Include PDF.js for client-side PDF text extraction -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
     <style>
         :root {
-            --primary-color: #ED8B00; /* Oranje in uw huisstijl */
+            --primary-color: #ED8B00; /* Oranje huisstijl */
             --primary-hover: #d47c00;
             --bg-color: #f8f9fa;
             --card-bg: #ffffff;
             --text-color: #333333;
             --border-color: #dddddd;
         }
-
-        body {
-            font-family: Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        header {
-            border-bottom: 3px solid var(--primary-color);
-            padding-bottom: 10px;
-            margin-bottom: 30px;
-        }
-
-        header h1 {
-            margin: 0;
-            color: #222;
-            font-size: 24px;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        @media (max-width: 768px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .card {
-            background: var(--card-bg);
-            border-radius: 6px;
-            padding: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            border: 1px solid var(--border-color);
-        }
-
-        .card h2 {
-            margin-top: 0;
-            font-size: 18px;
-            border-left: 4px solid var(--primary-color);
-            padding-left: 10px;
-            color: #444;
-        }
-
-        .file-input-wrapper {
-            margin: 15px 0;
-        }
-
-        .file-input-wrapper label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: bold;
-            font-size: 14px;
-        }
-
-        input[type="file"] {
-            display: block;
-            width: 100%;
-            padding: 10px;
-            background: #f1f1f1;
-            border-radius: 4px;
-            border: 1px dashed #ccc;
-            box-sizing: border-box;
-            cursor: pointer;
-        }
-
-        .btn {
-            background-color: var(--primary-color);
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            font-size: 14px;
-            font-weight: bold;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn:hover {
-            background-color: var(--primary-hover);
-        }
-
-        .btn:disabled {
-            background-color: #cccccc;
-            cursor: not-allowed;
-        }
-
-        .actions-bar {
-            margin-bottom: 25px;
-            display: flex;
-            gap: 15px;
-            align-items: center;
-        }
-
-        .status-message {
-            font-weight: bold;
-            font-size: 14px;
-        }
-
+        body { font-family: Arial, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header { border-bottom: 3px solid var(--primary-color); padding-bottom: 10px; margin-bottom: 30px; }
+        header h1 { margin: 0; color: #222; font-size: 24px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
+        @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+        .card { background: var(--card-bg); border-radius: 6px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border: 1px solid var(--border-color); }
+        .card h2 { margin-top: 0; font-size: 18px; border-left: 4px solid var(--primary-color); padding-left: 10px; color: #444; }
+        .file-input-wrapper { margin: 15px 0; }
+        .file-input-wrapper label { display: block; margin-bottom: 8px; font-weight: bold; font-size: 14px; }
+        input[type="file"] { display: block; width: 100%; padding: 10px; background: #f1f1f1; border-radius: 4px; border: 1px dashed #ccc; box-sizing: border-box; cursor: pointer; }
+        .btn { background-color: var(--primary-color); color: white; border: none; padding: 12px 20px; font-size: 14px; font-weight: bold; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; display: inline-flex; align-items: center; gap: 8px; }
+        .btn:hover { background-color: var(--primary-hover); }
+        .btn:disabled { background-color: #cccccc; cursor: not-allowed; }
+        .actions-bar { margin-bottom: 25px; display: flex; gap: 15px; align-items: center; }
+        .status-message { font-weight: bold; font-size: 14px; }
         .status-success { color: #2e7d32; }
         .status-working { color: #0288d1; }
         .status-error { color: #c62828; }
-
-        .table-responsive {
-            overflow-x: auto;
-            background: white;
-            border-radius: 6px;
-            border: 1px solid var(--border-color);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            text-align: left;
-            font-size: 13px;
-        }
-
-        th {
-            background-color: #f1f1f1;
-            color: #333;
-            font-weight: bold;
-            padding: 12px 10px;
-            border-bottom: 2px solid var(--border-color);
-        }
-
-        td {
-            padding: 10px;
-            border-bottom: 1px solid #eeeeee;
-            vertical-align: top;
-        }
-
-        tr:nth-child(even) td {
-            background-color: #fafafa;
-        }
-
-        .warning-status {
-            color: #c62828;
-            background-color: #ffebee;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-weight: bold;
-        }
-
-        .log-container {
-            background: #222;
-            color: #00ff00;
-            font-family: monospace;
-            padding: 15px;
-            border-radius: 4px;
-            height: 150px;
-            overflow-y: auto;
-            margin-top: 20px;
-            font-size: 12px;
-        }
+        .table-responsive { overflow-x: auto; background: white; border-radius: 6px; border: 1px solid var(--border-color); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+        th { background-color: #f1f1f1; color: #333; font-weight: bold; padding: 12px 10px; border-bottom: 2px solid var(--border-color); }
+        td { padding: 10px; border-bottom: 1px solid #eeeeee; vertical-align: top; }
+        tr:nth-child(even) td { background-color: #fafafa; }
+        .warning-status { color: #c62828; background-color: #ffebee; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+        .log-container { background: #222; color: #00ff00; font-family: monospace; padding: 15px; border-radius: 4px; height: 180px; overflow-y: auto; margin-top: 20px; font-size: 12px; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <header>
-        <h1>Fleet Fine Matcher & Data Extractor</h1>
+        <h1>Fleet Fine Matcher & Data Extractor (Verbeterde Versie)</h1>
     </header>
 
     <div class="grid">
-        <!-- Input Card -->
         <div class="card">
             <h2>1. Bestanden Uploaden</h2>
-            
             <div class="file-input-wrapper">
-                <label for="excel-file">Full Fleetoverview (Excel-bestand .xlsx / .xls):</label>
+                <label for="excel-file">Full Fleetoverview (Excel):</label>
                 <input type="file" id="excel-file" accept=".xlsx, .xls">
             </div>
-
             <div class="file-input-wrapper">
                 <label for="pdf-files">Boetes (Meerdere PDF-bestanden):</label>
                 <input type="file" id="pdf-files" accept=".pdf" multiple>
             </div>
         </div>
-
-        <!-- Explanation & Regex Config Card -->
         <div class="card">
-            <h2>2. Instructies & Logica</h2>
+            <h2>2. Status & Informatie</h2>
             <p style="font-size: 14px; line-height: 1.5; margin-bottom: 10px;">
-                Deze tool scant de geüploade PDF-boetes op <strong>kentekens</strong>, <strong>aanslagnummers</strong> en <strong>overtredingsdata</strong>. 
-                Vervolgens matcht hij dit automatisch met de berijdersgegevens uit het <em>Full Fleetoverview</em>.
+                Deze geüpdatete versie bevat <strong>automatische OCR-herkenning (Tesseract)</strong> voor gescande boetes en verbeterde tekstherkenning voor uiteenlopende lay-outs van gemeentes en het CJIB.
             </p>
             <p style="font-size: 12px; color: #666;">
-                * Omdat gemeentelijke boetes verschillen in lay-out, zoekt het algoritme via slimme tekstpatronen (RegEx) naar Nederlandse kentekens (bijv. XX-999-X of XX-XX-99), datums en documentnummers.
+                <em>Tip: Als een PDF een afbeelding/scan is, kan het verwerken door de OCR-analyse een paar seconden langer duren per bestand.</em>
             </p>
         </div>
     </div>
@@ -332,26 +97,22 @@ Gemini is AI and can make mistakes, including about people. Your privacy & Gemin
             </thead>
             <tbody>
                 <tr>
-                    <td colspan="8" style="text-align: center; color: #999; padding: 30px;">Nog geen gegevens verwerkt. Upload bestanden en klik op 'Verwerk Bestanden'.</td>
+                    <td colspan="8" style="text-align: center; color: #999; padding: 30px;">Nog geen gegevens verwerkt.</td>
                 </tr>
             </tbody>
         </table>
     </div>
 
-    <h2>Verwerkingslog</h2>
+    <h2>Verwerkingslog (Kijk hier bij fouten)</h2>
     <div id="log" class="log-container">Systeem klaar voor gebruik...<br></div>
 </div>
 
 <script>
-    // Configure PDF.js Worker
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-    // State management
     let fleetData = [];
-    let pdfFilesList = [];
     let processedResults = [];
 
-    // DOM Elements
     const excelInput = document.getElementById('excel-file');
     const pdfInput = document.getElementById('pdf-files');
     const processBtn = document.getElementById('process-btn');
@@ -360,13 +121,11 @@ Gemini is AI and can make mistakes, including about people. Your privacy & Gemin
     const logDiv = document.getElementById('log');
     const tableBody = document.querySelector('#result-table tbody');
 
-    // Logging function
     function log(text) {
         logDiv.innerHTML += `[${new Date().toLocaleTimeString()}] ${text}<br>`;
         logDiv.scrollTop = logDiv.scrollHeight;
     }
 
-    // Check if files are uploaded to enable process button
     function checkInputs() {
         if (excelInput.files.length > 0 && pdfInput.files.length > 0) {
             processBtn.disabled = false;
@@ -377,281 +136,254 @@ Gemini is AI and can make mistakes, including about people. Your privacy & Gemin
         }
     }
 
-    excelInput.addEventListener('change', (e) => {
-        if(e.target.files.length > 0) log(`Excel bestand geselecteerd: ${e.target.files[0].name}`);
-        checkInputs();
-    });
+    excelInput.addEventListener('change', (e) => { checkInputs(); if(e.target.files.length > 0) log(`Excel geselecteerd: ${e.target.files[0].name}`); });
+    pdfInput.addEventListener('change', (e) => { checkInputs(); if(e.target.files.length > 0) log(`${e.target.files.length} PDF's geselecteerd.`); });
 
-    pdfInput.addEventListener('change', (e) => {
-        if(e.target.files.length > 0) log(`${e.target.files.length} PDF-bestanden geselecteerd.`);
-        checkInputs();
-    });
-
-    // Helper: Parse Excel Date format to JS Date
-    function parseExcelDate(excelDate) {
-        if (!excelDate) return null;
-        if (excelDate instanceof Date) return excelDate;
-        // If it's a serial number
-        if (!isNaN(excelDate)) {
-            return new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-        }
-        // Try parsing string
-        const d = new Date(excelDate);
-        if (!isNaN(d.getTime())) return d;
+    function parseDate(dateStr) {
+        if (!dateStr) return null;
         
-        // Manual standard Dutch formats: DD-MM-YYYY
-        const parts = String(excelDate).match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
-        if (parts) {
-            return new Date(parts[3], parts[2] - 1, parts[1]);
+        // Formaat: 12-05-2026 of 12/05/2026
+        let parts = dateStr.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+        if (parts) return new Date(parts[3], parts[2] - 1, parts[1]);
+
+        // Nederlandse maanden voluit herkenning (bijv. 12 mei 2026 of 12 juni 2026)
+        const maanden = {
+            januari:0, feb:1, februari:1, maart:2, april:3, mei:4, juni:5, 
+            juli:6, augustus:7, aug:7, september:8, sept:8, oktober:9, november:10, december:11
+        };
+        let cleanStr = dateStr.toLowerCase();
+        for (let maand in maanden) {
+            if (cleanStr.includes(maand)) {
+                let dagMatch = cleanStr.match(/(\d{1,2})/);
+                let jaarMatch = cleanStr.match(/(\d{4})/);
+                if (dagMatch && jaarMatch) {
+                    return new Date(jaarMatch[1], maanden[maand], dagMatch[1]);
+                }
+            }
         }
-        return null;
+        
+        let d = new Date(dateStr);
+        return isNaN(d.getTime()) ? null : d;
     }
 
-    // Main process controller
     processBtn.addEventListener('click', async () => {
         try {
             processBtn.disabled = true;
             statusDiv.className = "status-message status-working";
-            statusDiv.innerText = "Bezig met verwerken...";
+            statusDiv.innerText = "Bezig met verwerken (dit kan even duren)...";
             processedResults = [];
-            log("Start verwerking...");
-
-            // 1. Process Excel Fleetoverview
+            
+            // 1. Excel inlezen
             await processExcel();
 
-            // 2. Process PDFs
-            await processPDFs();
+            // 2. PDF's verwerken
+            const files = pdfInput.files;
+            for (let i = 0; i < files.length; i++) {
+                await processSinglePDF(files[i], i + 1, files.length);
+            }
 
-            // 3. Render and finalize
             renderTable();
             exportBtn.disabled = false;
             statusDiv.className = "status-message status-success";
-            statusDiv.innerText = "Verwerking succesvol voltooid!";
-            log(`Succesvol klaar! ${processedResults.length} resultaten gevonden.`);
-
+            statusDiv.innerText = "Succesvol voltooid!";
         } catch (error) {
-            console.error(error);
+            log(`Fout: ${error.message}`);
             statusDiv.className = "status-message status-error";
-            statusDiv.innerText = "Er is een fout opgetreden.";
-            log(`CRITICAL ERROR: ${error.message}`);
+            statusDiv.innerText = "Er ging iets mis.";
         } finally {
             processBtn.disabled = false;
         }
     });
 
-    // Read and parse Fleetoverview Excel
     function processExcel() {
         return new Promise((resolve, reject) => {
             const file = excelInput.files[0];
             const reader = new FileReader();
-            
             reader.onload = function(e) {
                 try {
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
                     
-                    // Assume first sheet contains the data
-                    const firstSheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[firstSheetName];
-                    
-                    // Convert sheet to JSON rows
-                    const rows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-                    
-                    if(rows.length === 0) {
-                        throw new Error("Het Excel bestand is leeg of kon niet gelezen worden.");
-                    }
-
-                    log(`Excel ingeladen. ${rows.length} rijen gevonden in blad: ${firstSheetName}`);
-                    
-                    // Normalize sheet keys to eliminate spaces/casing variance
                     fleetData = rows.map(row => {
                         let normalized = {};
                         for (let key in row) {
-                            let cleanKey = key.trim().toLowerCase().replace(/\s+/g, '');
+                            let cleanKey = key.trim().toLowerCase().replace(/[\s_]+/g, '');
                             normalized[cleanKey] = row[key];
                         }
                         return normalized;
                     });
-
-                    // Validate columns broadly based on expected prompt names
-                    // expected: 'licenseplate', 'drivername', 'driverid', 'driversince', 'supplier'
-                    log("Kolommen geïndexeerd uit Fleetoverview.");
+                    log(`Excel ingeladen: ${fleetData.length} voertuigen gevonden.`);
                     resolve();
-                } catch (err) {
-                    reject(new Error("Fout bij lezen Excel: " + err.message));
-                }
+                } catch (err) { reject(err); }
             };
-            
-            reader.onerror = () => reject(new Error("Bestandslezer fout bij Excel."));
             reader.readAsArrayBuffer(file);
         });
     }
 
-    // Extract text from PDFs and seek targeted variables
-    async function processPDFs() {
-        const files = pdfInput.files;
+    async function processSinglePDF(file, current, total) {
+        log(`Verwerken [${current}/${total}]: ${file.name}...`);
+        const arrayBuffer = await file.arrayBuffer();
         
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
-            log(`Analyseer PDF [${i+1}/${files.length}]: ${file.name}`);
-            
+        let fullText = "";
+        try {
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            for (let p = 1; p <= pdf.numPages; p++) {
+                const page = await pdf.getPage(p);
+                const textContent = await page.getTextContent();
+                fullText += textContent.items.map(item => item.str).join(" ") + "\n";
+            }
+        } catch (e) {
+            log(`Kan PDF niet direct digitaal lezen, fout: ${e.message}`);
+        }
+
+        // Als er geen tekst uitkomt (minder dan 10 tekens), is het waarschijnlijk een scan/afbeelding -> Start OCR
+        if (fullText.trim().length < 10) {
+            log(`Geen digitale tekst gevonden in ${file.name}. Starten van OCR-beeldherkenning...`);
             try {
-                const arrayBuffer = await file.arrayBuffer();
-                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                // Maak een data-URL van de PDF om hem aan de OCR-lezer aan te bieden
+                const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+                const blobUrl = URL.createObjectURL(blob);
                 
-                let fullText = "";
-                // Extract text page by page
-                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                    const page = await pdf.getPage(pageNum);
-                    const textContent = await page.getTextContent();
-                    const pageText = textContent.items.map(item => item.str).join(" ");
-                    fullText += pageText + " \n ";
+                const worker = await Tesseract.createWorker();
+                await worker.loadLanguage('nld');
+                await worker.initialize('nld');
+                
+                // Opmerking: Tesseract kan rechtstreeks pagina's uit PDF/afbeeldingen lezen
+                const { data: { text } } = await worker.recognize(blobUrl);
+                fullText = text;
+                await worker.terminate();
+                URL.revokeObjectURL(blobUrl);
+                log(`OCR succesvol afgerond voor ${file.name}.`);
+            } catch (ocrErr) {
+                log(`OCR is mislukt voor ${file.name}: ${ocrErr.message}`);
+            }
+        }
+
+        // Data filteren uit de opgebouwde tekst
+        const extracted = extractDataFromText(fullText);
+        const match = matchFleetData(extracted.kenteken, extracted.datumOvertreding);
+
+        processedResults.push({
+            kenteken: extracted.kenteken || "NIET GEVONDEN",
+            naamBerijder: match ? match.driverName : "Niet gevonden in Excel",
+            workdayId: match ? match.driverId : "-",
+            berijderVanaf: match ? match.driverSinceStr : "-",
+            leasemaatschappij: match ? match.supplier : "-",
+            aanslagnummer: extracted.aanslagnummer || "Niet gevonden",
+            datumOvertreding: extracted.datumOvertredingStr || "Niet gevonden",
+            status: match ? match.statusMessage : ""
+        });
+    }
+
+    function extractDataFromText(text) {
+        let res = { kenteken: null, aanslagnummer: null, datumOvertreding: null, datumOvertredingStr: null };
+        if (!text) return res;
+
+        // Schoon de tekst op (meerdere spaties weghalen voor betere RegEx-matching)
+        const cleanText = text.replace(/\s+/g, ' ');
+
+        // 1. Kenteken zoeken (Inclusief patronen met spaties/streepjes en variaties)
+        // Matcht o.a.: XX-XX-XX, XX-XXX-X, X-XXX-XX, 99-XX-XX etc.
+        const lpRegex = /([A-Z0-9]{1,3}[- ]?[A-Z0-9]{2,3}[- ]?[A-Z0-9]{1,3})/gi;
+        const matches = cleanText.match(lpRegex);
+        if (matches) {
+            for (let potential of matches) {
+                let normalized = potential.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                // Geldig NL kenteken is altijd 6 tekens lang
+                if (normalized.length === 6) {
+                    // Formatteer netjes terug naar XX-XX-XX vorm voor de output
+                    res.kenteken = normalized.slice(0,2) + "-" + normalized.slice(2,4) + "-" + normalized.slice(4,6);
+                    // Check of het een geldig patroon is (geen puur getal of pure tekst)
+                    if (!/^\d+$/.test(normalized) && !/^[A-Z]+$/.test(normalized)) {
+                        break; 
+                    }
                 }
-
-                // Execute Extraction Logic on text
-                const extractedData = extractDataFromText(fullText, file.name);
-                
-                // Match with Fleet database
-                const matchedRecord = matchFleetData(extractedData.kenteken, extractedData.datumOvertreding);
-                
-                processedResults.push({
-                    kenteken: extractedData.kenteken || "ONBEKEND",
-                    naamBerijder: matchedRecord ? matchedRecord.driverName : "Niet gevonden in fleetoverview",
-                    workdayId: matchedRecord ? matchedRecord.driverId : "-",
-                    berijderVanaf: matchedRecord ? matchedRecord.driverSinceStr : "-",
-                    leasemaatschappij: matchedRecord ? matchedRecord.supplier : "-",
-                    aanslagnummer: extractedData.aanslagnummer || "Niet gevonden",
-                    datumOvertreding: extractedData.datumOvertredingStr || "Niet gevonden",
-                    status: matchedRecord ? matchedRecord.statusMessage : ""
-                });
-
-            } catch (err) {
-                log(`Fout bij verwerken van ${file.name}: ${err.message}`);
             }
         }
-    }
 
-    // RegEx patterns for parsing fine documents
-    function extractDataFromText(text, filename) {
-        let results = {
-            kenteken: null,
-            aanslagnummer: null,
-            datumOvertreding: null,
-            datumOvertredingStr: null
-        };
-
-        // 1. Target License Plates (Dutch layouts like: 12-ABC-3, AB-123-C, XX-XX-99, etc.)
-        // Clean text formatting tricks some layouts make spaces between characters
-        const licensePlateRegex = /\b([A-Z0-9]{2}-[A-Z0-9]{2,3}-[A-Z0-9]{1,2}|[A-Z0-9]{1,2}-[A-Z0-9]{2,3}-[A-Z0-9]{2}|[A-Z0-9]{2}-[A-Z0-9]{2}-[A-Z0-9]{2})\b/i;
-        const matchLP = text.match(licensePlateRegex);
-        if (matchLP) {
-            results.kenteken = matchLP[1].toUpperCase();
-        } else {
-            // Fallback: search for continuous strings that resemble a cleaned plate format
-            // Often plates in texts lose dashes
-            const rawPlateRegex = /\b([BDFGHJKLMNPRSTVWXYZ0-9]{6,8})\b/i;
-            const matchRaw = text.match(rawPlateRegex);
-            if(matchRaw) results.kenteken = matchRaw[1].toUpperCase();
-        }
-
-        // 2. Target Assessment Number / Fine Number (Aanslagnummer / Beschikkingsnummer)
-        // Standard formats for CJIB or Municipalities often have 12-16 digits, or combinations
-        const aanslagRegex = /(?:aanslagnummer|beschikkingsnummer|kenmerk|factuurnummer)[:\s]+([A-Z0-9.-]{6,20})/i;
-        const matchAanslag = text.match(aanslagRegex);
+        // 2. Aanslagnummer / Beschikkingsnummer zoeken via synoniemen
+        const aanslagRegex = /(?:aanslagnummer|beschikkingsnummer|kenmerk|factuurnummer|documentnummer|rekeningnummer|notanr)[:\s]+([A-Z0-9.-]{6,20})/i;
+        const matchAanslag = cleanText.match(aanslagRegex);
         if (matchAanslag) {
-            results.aanslagnummer = matchAanslag[1];
+            res.aanslagnummer = matchAanslag[1];
         } else {
-            // Generieke nummerscan rondom cruciale woorden
-            const genericNumberRegex = /(?:nummer|no\.)[:\s]*(\d{9,16})/i;
-            const matchGen = text.match(genericNumberRegex);
-            if (matchGen) results.aanslagnummer = matchGen[1];
+            // Generieke valstrik voor lange CJIB/Gemeente-nummers (vaak tussen de 10 en 16 cijfers)
+            const backupAanslag = cleanText.match(/\b(\d{10,16})\b/);
+            if (backupAanslag) res.aanslagnummer = backupAanslag[1];
         }
 
-        // 3. Target Violation Date (Datum overtreding / Overtredingstijdstip)
-        const dateRegex = /(?:datum\s+overtreding|overtreding|datum|pleegdatum)[:\s]+(\d{1,2}[-/]\d{1,2}[-/]\d{4})/i;
-        const matchDate = text.match(dateRegex);
+        // 3. Datum overtreding zoeken
+        const dateWordsRegex = /(?:datum\s+overtreding|overtredingstijdstip|pleegdatum|datum\s+feit|tijdstip|datum)[:\s]+([0-9]{1,2}[-/\s]+[a-z0-9]{2,9}[-/\s]+[0-9]{4})/i;
+        const matchDate = cleanText.match(dateWordsRegex);
         if (matchDate) {
-            results.datumOvertredingStr = matchDate[1];
-            results.datumOvertreding = parseExcelDate(matchDate[1]);
+            res.datumOvertredingStr = matchDate[1];
+            res.datumOvertreding = parseDate(matchDate[1]);
         } else {
-            // Search broad dates DD-MM-YYYY or text dates
-            const broadDateRegex = /\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/;
-            const matchBroad = text.match(broadDateRegex);
-            if (matchBroad) {
-                results.datumOvertredingStr = matchBroad[0];
-                results.datumOvertreding = parseExcelDate(matchBroad[0]);
+            // Brede datumprikker (DD-MM-YYYY)
+            const broadDate = cleanText.match(/\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/);
+            if (broadDate) {
+                res.datumOvertredingStr = broadDate[0];
+                res.datumOvertreding = parseDate(broadDate[0]);
             }
         }
 
-        log(`Gevonden in text -> Kenteken: ${results.kenteken || '?'}, Aanslagnr: ${results.aanslagnummer || '?'}, Datum: ${results.datumOvertredingStr || '?'}`);
-        return results;
+        return res;
     }
 
-    // Match extracted PDF data against localized Excel object
     function matchFleetData(kenteken, dateFine) {
         if (!kenteken) return null;
-
-        // Strip dashes for robust comparison matching
         const cleanTargetLP = kenteken.replace(/[^A-Z0-9]/gi, '');
 
-        // Search fleet rows
-        // Map expected properties dynamically
         let matchRow = fleetData.find(row => {
-            let lp = row['licenseplate'] || row['kenteken'] || '';
-            return lp.replace(/[^A-Z0-9]/gi, '') === cleanTargetLP;
+            let lp = row['licenseplate'] || row['kenteken'] || row['kentekenvoertuig'] || '';
+            return String(lp).replace(/[^A-Z0-9]/gi, '') === cleanTargetLP;
         });
 
         if (!matchRow) return null;
 
-        // Extract key cells using variable prompt definitions
         const driverName = matchRow['drivername'] || matchRow['naamberijder'] || 'Onbekend';
-        const driverId = matchRow['driverid'] || matchRow['workdayid'] || '-';
+        const driverId = matchRow['driverid'] || matchRow['workdayid'] || row['driverid'] || '-';
         const supplier = matchRow['supplier'] || matchRow['leasemaatschappij'] || '-';
         
         const rawDriverSince = matchRow['driversince'] || matchRow['berijdervanaf'];
-        const driverSinceDate = parseExcelDate(rawDriverSince);
-        
+        let driverSinceDate = null;
         let driverSinceStr = "-";
-        if (driverSinceDate) {
-            driverSinceStr = driverSinceDate.toLocaleDateString('nl-NL');
-        } else if (rawDriverSince) {
-            driverSinceStr = String(rawDriverSince);
+
+        if (rawDriverSince) {
+            if (rawDriverSince instanceof Date) {
+                driverSinceDate = rawDriverSince;
+            } else if (!isNaN(rawDriverSince) && String(rawDriverSince).length > 4) {
+                driverSinceDate = new Date(Math.round((rawDriverSince - 25569) * 86400 * 1000));
+            } else {
+                driverSinceDate = parseDate(String(rawDriverSince));
+            }
+            if(driverSinceDate && !isNaN(driverSinceDate.getTime())) {
+                driverSinceStr = driverSinceDate.toLocaleDateString('nl-NL');
+            } else {
+                driverSinceStr = String(rawDriverSince);
+            }
         }
 
-        // Check Business Logic rule for Status column
         let statusMessage = "";
         if (driverSinceDate && dateFine) {
-            // "LET OP: Ten tijde van deze gereden boete was een andere berijder actief" wanneer de datum in kolom 'Driver since' ná de boetedatum valt
             if (driverSinceDate > dateFine) {
                 statusMessage = "LET OP: Ten tijde van deze gereden boete was een andere berijder actief";
             }
         }
 
-        return {
-            driverName,
-            driverId,
-            supplier,
-            driverSinceStr,
-            statusMessage
-        };
+        return { driverName, driverId, supplier, driverSinceStr, statusMessage };
     }
 
-    // Render output list into real HTML Table view
     function renderTable() {
         tableBody.innerHTML = "";
-        
         if (processedResults.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #999; padding: 30px;">Geen resultaten gegenereerd.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #999; padding: 30px;">Geen resultaten.</td></tr>`;
             return;
         }
-
         processedResults.forEach(item => {
             const tr = document.createElement('tr');
-            
-            const statusCellContent = item.status 
-                ? `<span class="warning-status">${item.status}</span>` 
-                : "";
-
+            const statusCell = item.status ? `<span class="warning-status">${item.status}</span>` : "";
             tr.innerHTML = `
                 <td><strong>${item.kenteken}</strong></td>
                 <td>${item.naamBerijder}</td>
@@ -660,58 +392,23 @@ Gemini is AI and can make mistakes, including about people. Your privacy & Gemin
                 <td>${item.leasemaatschappij}</td>
                 <td>${item.aanslagnummer}</td>
                 <td>${item.datumOvertreding}</td>
-                <td>${statusCellContent}</td>
+                <td>${statusCell}</td>
             `;
             tableBody.appendChild(tr);
         });
     }
 
-    // Export output table back into real Excel download sheet
     exportBtn.addEventListener('click', () => {
-        log("Excel export aanmaken...");
-        
-        // Map array layout fit for data requirements
-        const excelDataMatrix = [
-            ["Kenteken", "Naam berijder", "Workday ID", "Berijder vanaf", "Leasemaatschappij", "Aanslagnummer", "Datum overtreding", "Status"]
-        ];
-
+        const matrix = [["Kenteken", "Naam berijder", "Workday ID", "Berijder vanaf", "Leasemaatschappij", "Aanslagnummer", "Datum overtreding", "Status"]];
         processedResults.forEach(item => {
-            excelDataMatrix.push([
-                item.kenteken,
-                item.naamBerijder,
-                item.workdayId,
-                item.berijderVanaf,
-                item.leasemaatschappij,
-                item.aanslagnummer,
-                item.datumOvertreding,
-                item.status
-            ]);
+            matrix.push([item.kenteken, item.naamBerijder, item.workdayId, item.berijderVanaf, item.leasemaatschappij, item.aanslagnummer, item.datumOvertreding, item.status]);
         });
-
-        // Initialize Worksheet via SheetJS Library
-        const ws = XLSX.utils.aoa_to_sheet(excelDataMatrix);
+        const ws = XLSX.utils.aoa_to_sheet(matrix);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Boete Match Overzicht");
-
-        // Set column widths for better immediate styling inside Excel
-        ws['!cols'] = [
-            { wch: 14 }, // Kenteken
-            { wch: 25 }, // Naam berijder
-            { wch: 15 }, // Workday ID
-            { wch: 15 }, // Berijder vanaf
-            { wch: 20 }, // Leasemaatschappij
-            { wch: 18 }, // Aanslagnummer
-            { wch: 18 }, // Datum overtreding
-            { wch: 55 }  // Status (needs width for large warning text)
-        ];
-
-        // Trigger safe file download onto client browser OS
+        ws['!cols'] = [{ wch: 14 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 55 }];
         XLSX.writeFile(wb, "Boetes_Match_Resultaat.xlsx");
-        log("Excel export succesvol gedownload.");
     });
 </script>
-
 </body>
 </html>
-index.html
-Displaying index.html.
