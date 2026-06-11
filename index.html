@@ -1,709 +1,1495 @@
 <!DOCTYPE html>
-
 <html lang="nl">
-
 <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Boeteverwerking - werkende versie</title>
 
-    <meta charset="UTF-8">
+  <!-- Externe libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root{
+      --bg:#f6f8fb;
+      --card:#fff;
+      --line:#d9e1ea;
+      --text:#1f2937;
+      --muted:#6b7280;
+      --blue:#0f62fe;
+      --blue2:#0b4ecc;
+      --light:#eef4ff;
+      --green:#ebfff1;
+      --greenText:#0f7a35;
+      --warn:#fff4e5;
+      --warnText:#9a6700;
+      --red:#ffe5e5;
+      --redText:#991b1b;
+    }
 
-    <title>PDF Boete Verwerker & Matcher</title>
+    * { box-sizing:border-box; }
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    body{
+      margin:0;
+      font-family:Segoe UI, Arial, sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    .wrap{
+      max-width:1500px;
+      margin:24px auto;
+      padding:0 16px 30px;
+    }
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    h1{
+      margin:0 0 8px;
+      font-size:30px;
+    }
 
-   
+    .sub{
+      color:var(--muted);
+      margin:0 0 18px;
+    }
 
-    <style>
+    .grid{
+      display:grid;
+      grid-template-columns:430px 1fr;
+      gap:16px;
+      align-items:start;
+    }
 
-        body { font-family: Arial, sans-serif; margin: 30px; background-color: #f4f6f9; color: #333; }
+    .card{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:18px;
+      box-shadow:0 2px 10px rgba(0,0,0,.04);
+    }
 
-        h1, h2 { color: #1a365d; }
+    .card h2{
+      margin-top:0;
+      font-size:18px;
+    }
 
-        .container { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .row{
+      margin-bottom:14px;
+    }
 
-        .section { margin-bottom: 20px; padding: 15px; border: 1px solid #e2e8f0; border-radius: 6px; }
+    label{
+      display:block;
+      font-weight:600;
+      margin-bottom:6px;
+    }
 
-        label { font-weight: bold; display: block; margin-bottom: 8px; }
+    input[type="file"],
+    input[type="text"],
+    textarea{
+      width:100%;
+      padding:10px 12px;
+      border:1px solid var(--line);
+      border-radius:10px;
+      background:#fff;
+      font-family:inherit;
+      font-size:14px;
+    }
 
-        input[type="file"] { display: block; margin-bottom: 10px; }
+    textarea{
+      min-height:150px;
+      resize:vertical;
+      line-height:1.45;
+    }
 
-        button { background-color: #2b6cb0; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; transition: background 0.2s; }
+    button{
+      appearance:none;
+      border:none;
+      border-radius:10px;
+      padding:12px 14px;
+      cursor:pointer;
+      background:var(--blue);
+      color:#fff;
+      font-weight:600;
+      margin-right:8px;
+      margin-bottom:8px;
+      transition:.15s ease;
+    }
 
-        button:hover { background-color: #2c5282; }
+    button:hover{ background:var(--blue2); }
 
-        button:disabled { background-color: #cbd5e0; cursor: not-allowed; }
+    button.secondary{
+      background:#fff;
+      color:var(--text);
+      border:1px solid var(--line);
+    }
 
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
+    button.secondary:hover{
+      background:#f2f4f7;
+    }
 
-        th, td { border: 1px solid #cbd5e0; padding: 10px; text-align: left; }
+    button:disabled{
+      opacity:.55;
+      cursor:not-allowed;
+    }
 
-        th { background-color: #edf2f7; }
+    .small{
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.45;
+      margin-top:6px;
+    }
 
-        .warning-row { background-color: #fed7d7 !important; color: #9b2c2c; font-weight: bold; }
+    .status{
+      margin-top:12px;
+      border:1px solid #dbeafe;
+      background:var(--light);
+      color:#1d4ed8;
+      border-radius:10px;
+      padding:10px 12px;
+      min-height:48px;
+      white-space:pre-wrap;
+    }
 
-        .actions { margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .status.ok{
+      background:var(--green);
+      color:var(--greenText);
+      border-color:#b7efc5;
+    }
 
-        .email-box { background: #edf2f7; padding: 15px; margin-top: 15px; border-left: 4px solid #2b6cb0; white-space: pre-wrap; border-radius: 4px; }
+    .status.warn{
+      background:var(--warn);
+      color:var(--warnText);
+      border-color:#f5d7a1;
+    }
 
-    </style>
+    .dropzone{
+      border:2px dashed #b8c6db;
+      border-radius:12px;
+      background:#fafcff;
+      padding:18px;
+      text-align:center;
+      color:#425466;
+      margin-top:8px;
+      transition:.15s ease;
+    }
 
+    .dropzone.dragover{
+      border-color:var(--blue);
+      background:#eef4ff;
+    }
+
+    .file-list{
+      margin-top:10px;
+      border:1px solid var(--line);
+      border-radius:10px;
+      background:#fbfcfe;
+      padding:10px;
+      font-size:13px;
+      max-height:150px;
+      overflow:auto;
+    }
+
+    .file-item{
+      padding:4px 0;
+      border-bottom:1px dashed #e5e7eb;
+    }
+
+    .file-item:last-child{
+      border-bottom:none;
+    }
+
+    .download-group{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin-top:12px;
+    }
+
+    .kpis{
+      display:flex;
+      flex-wrap:wrap;
+      gap:12px;
+      margin-bottom:16px;
+    }
+
+    .kpi{
+      min-width:160px;
+      background:#f8fafc;
+      border:1px solid var(--line);
+      border-radius:12px;
+      padding:12px;
+    }
+
+    .kpi .label{
+      font-size:12px;
+      color:var(--muted);
+    }
+
+    .kpi .value{
+      font-size:24px;
+      font-weight:700;
+      margin-top:6px;
+    }
+
+    .table-wrap{
+      overflow:auto;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:#fff;
+    }
+
+    table{
+      width:100%;
+      min-width:1400px;
+      border-collapse:collapse;
+    }
+
+    th, td{
+      padding:10px 12px;
+      border-bottom:1px solid var(--line);
+      text-align:left;
+      vertical-align:top;
+      font-size:14px;
+    }
+
+    th{
+      position:sticky;
+      top:0;
+      background:#f8fafc;
+      z-index:2;
+      color:#374151;
+      font-size:13px;
+    }
+
+    tr.flagged{
+      background:var(--red);
+    }
+
+    tr.duplicate{
+      outline:2px solid #f59e0b;
+      outline-offset:-2px;
+    }
+
+    .pill{
+      display:inline-block;
+      padding:4px 8px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:600;
+      background:#eef2ff;
+      color:#4338ca;
+      margin-right:4px;
+      margin-bottom:4px;
+    }
+
+    .pill.warn{
+      background:#fee2e2;
+      color:var(--redText);
+    }
+
+    .pill.dup{
+      background:#fff3cd;
+      color:#8a5300;
+    }
+
+    .tabs{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-bottom:10px;
+    }
+
+    .tab-btn.active{
+      background:var(--blue);
+      color:#fff;
+      border-color:var(--blue);
+    }
+
+    .section-title{
+      margin:14px 0 8px;
+      font-size:15px;
+      font-weight:700;
+    }
+
+    .meta-box{
+      border:1px solid var(--line);
+      border-radius:10px;
+      background:#fbfcfe;
+      padding:10px 12px;
+      margin-bottom:14px;
+      font-size:13px;
+      line-height:1.5;
+    }
+
+    hr.sep{
+      border:none;
+      border-top:1px solid #e5e7eb;
+      margin:16px 0;
+    }
+
+    @media (max-width:1100px){
+      .grid{
+        grid-template-columns:1fr;
+      }
+    }
+  </style>
 </head>
-
 <body>
+  <div class="wrap">
+    <h1>Boeteverwerking – werkende versie</h1>
+    <p class="sub">
+      Upload meerdere boete-PDF’s en één Excel- of CSV-bestand. De tool leest kenteken, dagtekening,
+      pleegdatum en aanslagnummer uit de PDF’s, matcht op kenteken met je bronbestand en maakt de gewenste output.
+    </p>
 
- 
+    <div class="grid">
+      <!-- LINKER KOLOM -->
+      <div class="card">
+        <h2>1. Bestanden uploaden</h2>
 
-<div class="container">
-
-    <h1>Boete Verwerker & Matcher</h1>
-
-    <p>Laad de lease-master Excel op en vervolgens de PDF-boetes om de data te matchen en exports te genereren.</p>
-
-   
-
-    <div class="section">
-
-        <label for="excelFile">1. Upload Lease-Master Excel (.xlsx)</label>
-
-        <input type="file" id="excelFile" accept=".xlsx, .xls">
-
-    </div>
-
- 
-
-    <div class="section">
-
-        <label for="pdfFiles">2. Upload PDF Boete(s) (Meerdere toegestaan)</label>
-
-        <input type="file" id="pdfFiles" accept=".pdf" multiple disabled>
-
-    </div>
-
- 
-
-    <button id="processBtn" disabled>Verwerk Bestanden</button>
-
- 
-
-    <div id="resultsSection" style="display:none;">
-
-        <h2>Resultaten Overzicht</h2>
-
-        <table id="resultsTable">
-
-            <thead>
-
-                <tr>
-
-                    <th>Kenteken</th>
-
-                    <th>Aanslagnummer</th>
-
-                    <th>Dagtekening (Pleegdatum)</th>
-
-                    <th>Leasemaatschappij</th>
-
-                    <th>Berijder</th>
-
-                    <th>Gekoppeld Sinds</th>
-
-                    <th>Status / Melding</th>
-
-                </tr>
-
-            </thead>
-
-            <tbody></tbody>
-
-        </table>
-
- 
-
-        <div class="actions">
-
-            <button id="downloadExcelBtn">Download Excel Overzicht</button>
-
-            <button id="downloadPdfsBtn">Genereer Gecombineerde PDF's per LeaseMij</button>
-
+        <div class="row">
+          <label for="pdfFiles">PDF-boetes (1 of meerdere)</label>
+          <input type="file" id="pdfFiles" accept="application/pdf" multiple />
+          <div id="pdfDropzone" class="dropzone">
+            <strong>Sleep PDF’s hiernaartoe</strong>
+            of gebruik de bestandskiezer hierboven
+          </div>
+          <div id="pdfList" class="file-list">Nog geen PDF’s geselecteerd.</div>
         </div>
 
- 
+        <div class="row">
+          <label for="excelFile">Excel / CSV met kenteken- en berijdersdata</label>
+          <input type="file" id="excelFile" accept=".xlsx,.xls,.csv" />
+          <div id="excelDropzone" class="dropzone">
+            <strong>Sleep Excel/CSV hiernaartoe</strong>
+            of gebruik de bestandskiezer hierboven
+          </div>
+          <div id="excelList" class="file-list">Nog geen Excel/CSV geselecteerd.</div>
+        </div>
 
-        <h2>Gegenereerde E-mails</h2>
+        <div class="row">
+          <button id="processBtn" type="button">Verwerken</button>
+          <button id="resetBtn" type="button" class="secondary">Reset</button>
+        </div>
 
-        <div id="emailTemplates"></div>
+        <div id="status" class="status">Nog niets verwerkt.</div>
 
+        <hr class="sep">
+
+        <h2>2. E-mailinstellingen</h2>
+
+        <div class="row">
+          <label for="emailArval">E-mailadres Arval</label>
+          <input type="text" id="emailArval" placeholder="bijv. boetes@arval.nl" />
+        </div>
+
+        <div class="row">
+          <label for="emailAyvens">E-mailadres Ayvens</label>
+          <input type="text" id="emailAyvens" placeholder="bijv. boetes@ayvens.com" />
+        </div>
+
+        <div class="row">
+          <label for="emailAlphabet">E-mailadres Alphabet</label>
+          <input type="text" id="emailAlphabet" placeholder="bijv. boetes@alphabet.com" />
+        </div>
+
+        <div class="row">
+          <label for="emailSubjectPrefix">Onderwerp-prefix</label>
+          <input type="text" id="emailSubjectPrefix" value="ING boetes" />
+        </div>
+
+        <div class="row">
+          <label for="emailSignature">Afsluiting / ondertekening</label>
+          <textarea id="emailSignature">Met vriendelijke groet,</textarea>
+        </div>
+
+        <hr class="sep">
+
+        <h2>3. Downloads</h2>
+
+        <div class="download-group">
+          <button id="downloadExcelBtn" type="button" class="secondary" disabled>Download overzicht Excel</button>
+          <button id="downloadCsvBtn" type="button" class="secondary" disabled>Download overzicht CSV</button>
+          <button id="downloadZipBtn" type="button" class="secondary" disabled>Download alles als ZIP</button>
+        </div>
+
+        <div class="download-group">
+          <button id="downloadPdfArvalBtn" type="button" class="secondary" disabled>PDF Arval</button>
+          <button id="downloadPdfAyvensBtn" type="button" class="secondary" disabled>PDF Ayvens</button>
+          <button id="downloadPdfAlphabetBtn" type="button" class="secondary" disabled>PDF Alphabet</button>
+        </div>
+
+        <div class="download-group">
+          <button id="downloadEmlArvalBtn" type="button" class="secondary" disabled>E-mail Arval (.eml)</button>
+          <button id="downloadEmlAyvensBtn" type="button" class="secondary" disabled>E-mail Ayvens (.eml)</button>
+          <button id="downloadEmlAlphabetBtn" type="button" class="secondary" disabled>E-mail Alphabet (.eml)</button>
+        </div>
+      </div>
+
+      <!-- RECHTER KOLOM -->
+      <div class="card">
+        <h2>Resultaten</h2>
+
+        <div class="kpis">
+          <div class="kpi"><div class="label">Aantal PDF’s</div><div class="value" id="kpiPdfCount">0</div></div>
+          <div class="kpi"><div class="label">Arval</div><div class="value" id="kpiArval">0</div></div>
+          <div class="kpi"><div class="label">Ayvens</div><div class="value" id="kpiAyvens">0</div></div>
+          <div class="kpi"><div class="label">Alphabet</div><div class="value" id="kpiAlphabet">0</div></div>
+          <div class="kpi"><div class="label">Gemarkeerd</div><div class="value" id="kpiFlagged">0</div></div>
+          <div class="kpi"><div class="label">Dubbele aanslagnummers</div><div class="value" id="kpiDuplicates">0</div></div>
+        </div>
+
+        <div class="meta-box">
+          <div><strong>Gedetecteerde kolommen:</strong></div>
+          <div id="headerMapText">Nog geen bronbestand verwerkt.</div>
+        </div>
+
+        <div class="section-title">E-mailpreview</div>
+        <div class="tabs">
+          <button id="tabArval" class="secondary tab-btn active" type="button">Arval</button>
+          <button id="tabAyvens" class="secondary tab-btn" type="button">Ayvens</button>
+          <button id="tabAlphabet" class="secondary tab-btn" type="button">Alphabet</button>
+        </div>
+        <textarea id="emailPreview" readonly></textarea>
+
+        <div class="section-title">Resultaattabel</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Bestand</th>
+                <th>Kenteken</th>
+                <th>Dagtekening</th>
+                <th>Pleegdatum</th>
+                <th>Aanslagnummer</th>
+                <th>Leasemaatschappij</th>
+                <th>WorkdayID</th>
+                <th>Achternaam berijder</th>
+                <th>Berijder</th>
+                <th>Gekoppeld sinds</th>
+                <th>Status</th>
+                <th>Opmerking</th>
+              </tr>
+            </thead>
+            <tbody id="resultBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
+  </div>
 
-</div>
+  <script>
+    // =========================
+    // Config / State
+    // =========================
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.js";
 
- 
+    const state = {
+      pdfFiles: [],
+      excelFile: null,
+      excelRows: [],
+      excelHeaderMap: null,
+      processedRows: [],
+      duplicates: new Set(),
+      groupedPdfBytes: {
+        Arval: null,
+        Ayvens: null,
+        Alphabet: null
+      },
+      groupedPdfNames: {
+        Arval: "Boetes_Arval.pdf",
+        Ayvens: "Boetes_Ayvens.pdf",
+        Alphabet: "Boetes_Alphabet.pdf"
+      },
+      emlContents: {
+        Arval: "",
+        Ayvens: "",
+        Alphabet: ""
+      },
+      activePreviewCompany: "Arval"
+    };
 
-<script>
+    // =========================
+    // DOM helpers
+    // =========================
+    function $(id){ return document.getElementById(id); }
 
-    // Configuratie voor PDF.js
+    function setStatus(message, type = "") {
+      const el = $("status");
+      el.className = "status" + (type ? " " + type : "");
+      el.textContent = message;
+    }
 
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
 
- 
+    function setButtonsEnabled(enabled) {
+      [
+        "downloadExcelBtn",
+        "downloadCsvBtn",
+        "downloadZipBtn",
+        "downloadPdfArvalBtn",
+        "downloadPdfAyvensBtn",
+        "downloadPdfAlphabetBtn",
+        "downloadEmlArvalBtn",
+        "downloadEmlAyvensBtn",
+        "downloadEmlAlphabetBtn"
+      ].forEach(id => {
+        $(id).disabled = !enabled;
+      });
+    }
 
-    let excelData = [];
+    function librariesLoaded() {
+      const ok =
+        typeof pdfjsLib !== "undefined" &&
+        typeof XLSX !== "undefined" &&
+        typeof PDFLib !== "undefined" &&
+        typeof JSZip !== "undefined";
 
-    let processedRows = [];
+      if (!ok) {
+        setStatus(
+          "Niet alle externe libraries zijn geladen. Open dit bestand in Edge/Chrome met internettoegang.",
+          "warn"
+        );
+      }
+      return ok;
+    }
 
- 
+    function downloadBlob(blob, fileName) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }
 
-    const excelInput = document.getElementById('excelFile');
+    // =========================
+    // Normalisatie / parsing
+    // =========================
+    function normalizeText(v) {
+      return String(v ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+    }
 
-    const pdfInput = document.getElementById('pdfFiles');
+    function normalizeKey(v) {
+      return normalizeText(v).replace(/[^\p{L}\p{N}]+/gu, "");
+    }
 
-    const processBtn = document.getElementById('processBtn');
+    function normalizePlate(v) {
+      return String(v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
 
-    const resultsSection = document.getElementById('resultsSection');
+    function safeDateStr(d) {
+      if (!(d instanceof Date) || isNaN(d)) return "";
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const yyyy = d.getFullYear();
+      return `${dd}-${mm}-${yyyy}`;
+    }
 
-    const resultsTableBody = document.querySelector('#resultsTable tbody');
+    function dedupe(arr) {
+      return [...new Set(arr)];
+    }
 
- 
+    function excelDateToJSDate(serial) {
+      if (typeof serial !== "number") return null;
+      const utcDays = Math.floor(serial - 25569);
+      const utcValue = utcDays * 86400;
+      const dateInfo = new Date(utcValue * 1000);
+      return new Date(dateInfo.getFullYear(), dateInfo.getMonth(), dateInfo.getDate());
+    }
 
-    // 1. Excel Inlezen
+    function parseDutchDate(value) {
+      if (value == null || value === "") return null;
 
-    excelInput.addEventListener('change', function(e) {
+      if (value instanceof Date && !isNaN(value)) {
+        return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+      }
 
-        const file = e.target.files[0];
+      if (typeof value === "number") {
+        const d = excelDateToJSDate(value);
+        return d && !isNaN(d) ? d : null;
+      }
 
-        if (!file) return;
+      let s = String(value).trim().toLowerCase();
+      if (!s) return null;
 
- 
+      s = s.replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g, "").trim();
+      s = s.replace(/\buur\b/g, "").trim();
+      s = s.replace(/,/g, " ").replace(/\s+/g, " ");
 
-        const reader = new FileReader();
+      const months = {
+        januari:0, jan:0,
+        februari:1, feb:1,
+        maart:2, mrt:2,
+        april:3, apr:3,
+        mei:4,
+        juni:5, jun:5,
+        juli:6, jul:6,
+        augustus:7, aug:7,
+        september:8, sep:8, sept:8,
+        oktober:9, okt:9,
+        november:10, nov:10,
+        december:11, dec:11
+      };
 
-        reader.onload = function(evt) {
+      let m;
 
-            const data = evt.target.result;
+      // 19 mei 2026
+      m = s.match(/(\d{1,2})\s+([a-zé]+)\s+(\d{4})/i);
+      if (m) {
+        const day = parseInt(m[1], 10);
+        const monthName = m[2].toLowerCase();
+        const year = parseInt(m[3], 10);
+        if (monthName in months) {
+          return new Date(year, months[monthName], day);
+        }
+      }
 
-            const workbook = XLSX.read(data, { type: 'binary', cellDates: true });
+      // 19-05-2026 / 19/05/2026
+      m = s.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/);
+      if (m) {
+        const day = parseInt(m[1], 10);
+        const month = parseInt(m[2], 10) - 1;
+        let year = parseInt(m[3], 10);
+        if (year < 100) year += 2000;
+        return new Date(year, month, day);
+      }
 
-            const firstSheetName = workbook.SheetNames[0];
+      // 2026-05-19 / 2026/05/19
+      m = s.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+      if (m) {
+        const year = parseInt(m[1], 10);
+        const month = parseInt(m[2], 10) - 1;
+        const day = parseInt(m[3], 10);
+        return new Date(year, month, day);
+      }
 
-            const worksheet = workbook.Sheets[firstSheetName];
+      const d = new Date(s);
+      if (!isNaN(d)) return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
-           
+      return null;
+    }
 
-            // Converteer naar JSON objecten
+    function cleanCompanyName(value) {
+      const n = normalizeText(value);
+      if (n.includes("arval")) return "Arval";
+      if (n.includes("ayvens") || n.includes("leaseplan")) return "Ayvens";
+      if (n.includes("alphabet")) return "Alphabet";
+      return "";
+    }
 
-            excelData = XLSX.utils.sheet_to_json(worksheet);
+    function deriveLastName(record) {
+      if (record.achternaam) return String(record.achternaam).trim();
+      if (!record.berijder) return "";
+      const parts = String(record.berijder).trim().split(/\s+/);
+      return parts.length ? parts[parts.length - 1] : "";
+    }
 
-           
+    function escapeEml(text) {
+      return String(text ?? "").replace(/\n/g, "\r\n");
+    }
 
-            // Activeer PDF input zodra Excel bekend is
+    // =========================
+    // UI updates
+    // =========================
+    function updateFileLists() {
+      if (!state.pdfFiles.length) {
+        $("pdfList").innerHTML = "Nog geen PDF’s geselecteerd.";
+      } else {
+        $("pdfList").innerHTML = state.pdfFiles.map(f =>
+          `<div class="file-item">${escapeHtml(f.name)} <span class="small">(${Math.round(f.size / 1024)} KB)</span></div>`
+        ).join("");
+      }
 
-            pdfInput.disabled = false;
+      if (!state.excelFile) {
+        $("excelList").innerHTML = "Nog geen Excel/CSV geselecteerd.";
+      } else {
+        $("excelList").innerHTML =
+          `<div class="file-item">${escapeHtml(state.excelFile.name)} <span class="small">(${Math.round(state.excelFile.size / 1024)} KB)</span></div>`;
+      }
+    }
 
-            alert('Lease-master succesvol ingeladen! Je kunt nu de PDF\'s uploaden.');
+    function updateHeaderMapText() {
+      if (!state.excelHeaderMap) {
+        $("headerMapText").textContent = "Nog geen bronbestand verwerkt.";
+        return;
+      }
 
+      const m = state.excelHeaderMap;
+      $("headerMapText").innerHTML = `
+        <div><strong>Kenteken:</strong> ${escapeHtml(m.kentekenLabel || "niet gevonden")}</div>
+        <div><strong>Leasemaatschappij:</strong> ${escapeHtml(m.leaseLabel || "niet gevonden")}</div>
+        <div><strong>WorkdayID:</strong> ${escapeHtml(m.workdayidLabel || "niet gevonden")}</div>
+        <div><strong>Achternaam:</strong> ${escapeHtml(m.achternaamLabel || "niet gevonden")}</div>
+        <div><strong>Berijder:</strong> ${escapeHtml(m.berijderLabel || "niet gevonden")}</div>
+        <div><strong>Gekoppeld sinds:</strong> ${escapeHtml(m.sindsLabel || "niet gevonden")}</div>
+      `;
+    }
+
+    function updatePreviewTabs() {
+      ["Arval", "Ayvens", "Alphabet"].forEach(company => {
+        $("tab" + company).classList.toggle("active", state.activePreviewCompany === company);
+      });
+      $("emailPreview").value = state.emlContents[state.activePreviewCompany] || "";
+    }
+
+    // =========================
+    // Drag & drop
+    // =========================
+    function setupDropzone(dropzoneId, handler) {
+      const zone = $(dropzoneId);
+
+      ["dragenter", "dragover"].forEach(ev => {
+        zone.addEventListener(ev, e => {
+          e.preventDefault();
+          e.stopPropagation();
+          zone.classList.add("dragover");
+        });
+      });
+
+      ["dragleave", "drop"].forEach(ev => {
+        zone.addEventListener(ev, e => {
+          e.preventDefault();
+          e.stopPropagation();
+          zone.classList.remove("dragover");
+        });
+      });
+
+      zone.addEventListener("drop", e => {
+        const files = [...e.dataTransfer.files];
+        handler(files);
+      });
+    }
+
+    // =========================
+    // Excel / CSV
+    // =========================
+    function detectHeaderRow(rows) {
+      let bestRow = 0;
+      let bestScore = -1;
+
+      const synonyms = {
+        kenteken: ["kenteken", "licenseplate", "licenceplate", "registration", "registrationnumber"],
+        lease: ["leasemaatschappij", "leasecompany", "lessor", "maatschappij", "owner", "lm"],
+        workdayid: ["workdayid", "workday", "employeeid", "personeelsnummer", "medewerkernummer"],
+        achternaam: ["achternaam", "surname", "lastname", "familyname"],
+        berijder: ["berijder", "bestuurder", "driver", "employee", "medewerker", "naam"],
+        sinds: ["sinds", "gekoppeldsinds", "koppelingvanaf", "startdatum", "startdate", "fromdate", "vanaf", "ingangsdatum"]
+      };
+
+      for (let i = 0; i < Math.min(rows.length, 30); i++) {
+        const row = rows[i] || [];
+        const normalized = row.map(c => normalizeKey(c));
+        let score = 0;
+
+        Object.values(synonyms).forEach(list => {
+          if (normalized.some(cell => list.includes(cell))) score++;
+        });
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestRow = i;
+        }
+      }
+
+      return bestRow;
+    }
+
+    function buildHeaderMap(headerRow) {
+      const raw = headerRow || [];
+      const headers = raw.map(h => normalizeKey(h));
+
+      const candidates = {
+        kenteken: ["kenteken", "licenseplate", "licenceplate", "registration", "registrationnumber"],
+        lease: ["leasemaatschappij", "leasecompany", "lessor", "maatschappij", "owner", "lm"],
+        workdayid: ["workdayid", "workday", "employeeid", "personeelsnummer", "medewerkernummer"],
+        achternaam: ["achternaam", "surname", "lastname", "familyname"],
+        berijder: ["berijder", "bestuurder", "driver", "employee", "medewerker", "naam"],
+        sinds: ["sinds", "gekoppeldsinds", "koppelingvanaf", "startdatum", "startdate", "fromdate", "vanaf", "ingangsdatum"]
+      };
+
+      const out = {};
+
+      for (const [key, list] of Object.entries(candidates)) {
+        let idx = headers.findIndex(h => list.includes(h));
+        if (idx === -1) idx = headers.findIndex(h => list.some(v => h.includes(v)));
+        out[key] = idx;
+        out[key + "Label"] = idx >= 0 ? String(raw[idx]) : "";
+      }
+
+      return out;
+    }
+
+    async function readTabularFile(file) {
+      const lower = file.name.toLowerCase();
+
+      if (lower.endsWith(".csv")) {
+        const text = await file.text();
+        const lines = text.split(/\r?\n/).filter(Boolean);
+        return lines.map(line => {
+          if (line.split(";").length > line.split(",").length) {
+            return line.split(";").map(v => v.replace(/^"|"$/g, "").replace(/""/g, '"'));
+          }
+          return line.split(",").map(v => v.replace(/^"|"$/g, "").replace(/""/g, '"'));
+        });
+      }
+
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
+    }
+
+    async function readExcel(file) {
+      const rows = await readTabularFile(file);
+      if (!rows.length) throw new Error("Excel/CSV-bestand is leeg.");
+
+      const headerRowIndex = detectHeaderRow(rows);
+      const headerRow = rows[headerRowIndex];
+      const headerMap = buildHeaderMap(headerRow);
+
+      const dataRows = rows
+        .slice(headerRowIndex + 1)
+        .filter(r => Array.isArray(r) && r.some(v => String(v ?? "").trim() !== ""))
+        .map(r => {
+          const get = key => headerMap[key] >= 0 ? r[headerMap[key]] : "";
+
+          const kenteken = normalizePlate(get("kenteken"));
+          const lease = cleanCompanyName(get("lease"));
+          const workdayid = get("workdayid") ?? "";
+          const achternaam = get("achternaam") ?? "";
+          const berijder = get("berijder") ?? "";
+          const sindsRaw = get("sinds");
+          const sindsDate = parseDutchDate(sindsRaw);
+
+          return {
+            kenteken,
+            lease,
+            workdayid: String(workdayid ?? "").trim(),
+            achternaam: String(achternaam ?? "").trim(),
+            berijder: String(berijder ?? "").trim(),
+            gekoppeldSinds: sindsDate,
+            gekoppeldSindsRaw: String(sindsRaw ?? "").trim()
+          };
+        })
+        .filter(r => r.kenteken);
+
+      return { rows: dataRows, headerMap };
+    }
+
+    function buildIndexByPlate(rows) {
+      const map = new Map();
+
+      for (const row of rows) {
+        if (!map.has(row.kenteken)) map.set(row.kenteken, []);
+        map.get(row.kenteken).push(row);
+      }
+
+      for (const arr of map.values()) {
+        arr.sort((a, b) => {
+          const ta = a.gekoppeldSinds instanceof Date && !isNaN(a.gekoppeldSinds) ? a.gekoppeldSinds.getTime() : -Infinity;
+          const tb = b.gekoppeldSinds instanceof Date && !isNaN(b.gekoppeldSinds) ? b.gekoppeldSinds.getTime() : -Infinity;
+          return ta - tb;
+        });
+      }
+
+      return map;
+    }
+
+    // =========================
+    // PDF parsing
+    // =========================
+    async function extractPdfText(file) {
+      const buffer = await file.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({ data: buffer, useWorkerFetch: false });
+      const pdf = await loadingTask.promise;
+
+      let fullText = "";
+
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const pageText = content.items.map(i => i.str).join(" ");
+        fullText += "\n" + pageText;
+      }
+
+      return fullText.replace(/\s+/g, " ").trim();
+    }
+
+    function extractField(text, patterns) {
+      for (const regex of patterns) {
+        const match = text.match(regex);
+        if (match && match[1]) return match[1].trim();
+      }
+      return "";
+    }
+
+    function extractKenteken(text) {
+      let v = extractField(text, [
+        /kenteken\s*\/\s*merk\s*([A-Z0-9\-]{5,10})/i,
+        /kenteken\s*[:\-]?\s*([A-Z0-9\-]{5,10})/i
+      ]);
+
+      if (v) return normalizePlate(v);
+
+      const fallback = text.match(/kenteken[\s\S]{0,120}?([A-Z0-9\-]{5,10})/i);
+      if (fallback && fallback[1]) return normalizePlate(fallback[1]);
+
+      return "";
+    }
+
+    function extractPdfFields(text) {
+      const aanslagnummer = extractField(text, [
+        /aanslagnummer\s*([0-9]{6,})/i
+      ]);
+
+      const dagtekeningRaw = extractField(text, [
+        /dagtekening\s*([0-9]{1,2}\s+[a-zé]+\s+[0-9]{4})/i,
+        /dagtekening\s*([0-9]{1,2}[-\/][0-9]{1,2}[-\/][0-9]{2,4})/i
+      ]);
+
+      const pleegdatumRaw = extractField(text, [
+        /datum\s*\/\s*tijd\s*feit\s*([0-9]{1,2}[-\/][0-9]{1,2}[-\/][0-9]{2,4})/i,
+        /bonnummer[\s\S]{0,150}?([0-9]{1,2}[-\/][0-9]{1,2}[-\/][0-9]{2,4})/i,
+        /datum\/tijd[\s\S]{0,100}?([0-9]{1,2}[-\/][0-9]{1,2}[-\/][0-9]{2,4})/i
+      ]);
+
+      return {
+        kenteken: extractKenteken(text),
+        dagtekeningRaw,
+        dagtekening: parseDutchDate(dagtekeningRaw),
+        pleegdatumRaw,
+        pleegdatum: parseDutchDate(pleegdatumRaw),
+        aanslagnummer
+      };
+    }
+
+    // =========================
+    // Matchlogica
+    // =========================
+    function matchPlateToExcel(pdfData, excelIndex) {
+      const kenteken = normalizePlate(pdfData.kenteken);
+      const rows = excelIndex.get(kenteken) || [];
+
+      // Niet gevonden => Alphabet
+      if (!rows.length) {
+        return {
+          kenteken,
+          lease: "Alphabet",
+          workdayid: "",
+          achternaam: "",
+          berijder: "",
+          gekoppeldSinds: null,
+          gekoppeldSindsRaw: "",
+          flagged: false,
+          previousDriverRow: null,
+          foundInExcel: false
         };
+      }
 
-        reader.readAsBinaryString(file);
+      const currentRow = rows[rows.length - 1];
 
-    });
-
- 
-
-    // Activeer verwerkknop als er PDF's zijn gekozen
-
-    pdfInput.addEventListener('change', function() {
-
-        if (this.files.length > 0) processBtn.disabled = false;
-
-    });
-
- 
-
-    // 2. Hoofdproces bij klikken op de knop
-
-    processBtn.addEventListener('click', async function() {
-
-        processedRows = [];
-
-        resultsTableBody.innerHTML = '';
-
-        const files = pdfInput.files;
-
- 
-
-        for (let i = 0; i < files.length; i++) {
-
-            const file = files[i];
-
-            const pdfText = await extractTextFromPdf(file);
-
-           
-
-            // Regex patronen (Pas deze eventueel aan op basis van de exacte lay-out van de boetes)
-
-            const kenteken = matchKenteken(pdfText);
-
-            const dagtekening = matchDagtekening(pdfText);
-
-            const aanslagnummer = matchAanslagnummer(pdfText);
-
- 
-
-            // Zoek match in Excel data
-
-            const match = findExcelMatch(kenteken);
-
- 
-
-            let leasemaatschappij = "Alphabet"; // Default als niet gevonden
-
-            let berijder = "Onbekend";
-
-            let gekoppeldSinds = null;
-
-            let workdayId = "";
-
-            let achternaam = "Onbekend";
-
- 
-
-            if (match) {
-
-                // Flexibele kolomnamen mapping (hoofdletterongevoelig)
-
-                leasemaatschappij = match['Leasemaatschappij'] || match['leasemaatschappij'] || match['LeaseMij'] || "Alphabet";
-
-                berijder = match['Berijder'] || match['Naam'] || match['Volledige naam'] || "Onbekend";
-
-                gekoppeldSinds = match['Gekoppeld Sinds'] || match['Ingegaan op'] || match['Datum gekoppeld'] || null;
-
-                workdayId = match['WorkdayID'] || match['Workday ID'] || match['Personeelsnummer'] || "";
-
-                achternaam = match['Achternaam'] || berijder.split(' ').pop() || "";
-
+      let historicalRow = null;
+      if (pdfData.dagtekening instanceof Date && !isNaN(pdfData.dagtekening)) {
+        for (const row of rows) {
+          if (row.gekoppeldSinds instanceof Date && !isNaN(row.gekoppeldSinds)) {
+            if (row.gekoppeldSinds.getTime() <= pdfData.dagtekening.getTime()) {
+              historicalRow = row;
             }
+          }
+        }
+      }
 
- 
+      let flagged = false;
+      if (
+        currentRow.gekoppeldSinds instanceof Date &&
+        pdfData.dagtekening instanceof Date &&
+        currentRow.gekoppeldSinds.getTime() > pdfData.dagtekening.getTime()
+      ) {
+        flagged = true;
+      }
 
-            // Controleer datums voor de waarschuwing
+      return {
+        kenteken,
+        lease: currentRow.lease || "Alphabet",
+        workdayid: currentRow.workdayid || "",
+        achternaam: deriveLastName(currentRow),
+        berijder: currentRow.berijder || "",
+        gekoppeldSinds: currentRow.gekoppeldSinds || null,
+        gekoppeldSindsRaw: currentRow.gekoppeldSindsRaw || "",
+        flagged,
+        previousDriverRow: historicalRow,
+        foundInExcel: true
+      };
+    }
 
-            let isVorigeBerijder = false;
+    function detectDuplicates(rows) {
+      const counts = {};
+      rows.forEach(r => {
+        const nr = String(r.aanslagnummer || "").trim();
+        if (!nr) return;
+        counts[nr] = (counts[nr] || 0) + 1;
+      });
 
-            if (gekoppeldSinds && dagtekening) {
+      return new Set(
+        Object.entries(counts)
+          .filter(([, count]) => count > 1)
+          .map(([nr]) => nr)
+      );
+    }
 
-                const datumGekoppeld = new Date(gekoppeldSinds);
+    // =========================
+    // E-mail
+    // =========================
+    function getEmailAddress(company) {
+      if (company === "Arval") return $("emailArval").value.trim();
+      if (company === "Ayvens") return $("emailAyvens").value.trim();
+      return $("emailAlphabet").value.trim();
+    }
 
-                const datumBoete = parseDutchDate(dagtekening);
+    function getEmailSubject(company) {
+      const prefix = $("emailSubjectPrefix").value.trim() || "ING boetes";
+      return `${prefix} - ${company}`;
+    }
 
-               
+    function getEmailSignature() {
+      return $("emailSignature").value || "Met vriendelijke groet,";
+    }
 
-                if (datumGekoppeld > datumBoete) {
+    function buildEml(company, rows) {
+      const flaggedKentekens = dedupe(
+        rows
+          .filter(r => r.leasemaatschappij === company && r.flagged)
+          .map(r => r.kenteken)
+          .filter(Boolean)
+      );
 
-                    isVorigeBerijder = true;
+      let body = "Goedendag,\n\n";
+      body += "Zoals besproken graag deze boetes in behandeling nemen en betalen voor ING.\n\n";
 
-                }
+      if (flaggedKentekens.length) {
+        flaggedKentekens.forEach(kenteken => {
+          body += `Bij kentekens ${kenteken} graag belasten op werknemer die op dit kenteken stond geregistreerd op de pleegdatum.\n`;
+        });
+        body += "\n";
+      }
 
-            }
+      body += getEmailSignature();
 
- 
+      return [
+        `To: ${getEmailAddress(company)}`,
+        `Subject: ${getEmailSubject(company)}`,
+        "MIME-Version: 1.0",
+        "Content-Type: text/plain; charset=UTF-8",
+        "Content-Transfer-Encoding: 8bit",
+        "",
+        escapeEml(body)
+      ].join("\r\n");
+    }
 
-            processedRows.push({
+    function rebuildAllEmailPreviews() {
+      state.emlContents.Arval = buildEml("Arval", state.processedRows);
+      state.emlContents.Ayvens = buildEml("Ayvens", state.processedRows);
+      state.emlContents.Alphabet = buildEml("Alphabet", state.processedRows);
+      updatePreviewTabs();
+    }
 
-                kenteken: kenteken || "ONBEKEND",
+    // =========================
+    // Exports
+    // =========================
+    function buildOverviewRows(rows) {
+      return rows.map(r => ({
+        "Kenteken": r.kenteken || "",
+        "WorkdayID": r.workdayid || "",
+        "Achternaam berijder": r.achternaam || "",
+        "Pleegdatum": safeDateStr(r.pleegdatum) || r.pleegdatumRaw || "",
+        "Aanslagnummer boete": r.aanslagnummer || ""
+      }));
+    }
 
-                dagtekening: dagtekening || "ONBEKEND",
+    function buildOverviewWorkbook(rows) {
+      const data = buildOverviewRows(rows);
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(data);
 
-                aanslagnummer: aanslagnummer || "ONBEKEND",
+      ws["!cols"] = [
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 24 },
+        { wch: 14 },
+        { wch: 22 }
+      ];
 
-                leasemaatschappij: leasemaatschappij,
+      XLSX.utils.book_append_sheet(wb, ws, "Overzicht");
+      return wb;
+    }
 
-                berijder: berijder,
+    function buildOverviewCsv(rows) {
+      const data = buildOverviewRows(rows);
+      const lines = [];
+      lines.push("Kenteken;WorkdayID;Achternaam berijder;Pleegdatum;Aanslagnummer boete");
 
-                gekoppeldSinds: gekoppeldSinds ? formatDate(new Date(gekoppeldSinds)) : "-",
+      data.forEach(r => {
+        lines.push([
+          r["Kenteken"],
+          r["WorkdayID"],
+          r["Achternaam berijder"],
+          r["Pleegdatum"],
+          r["Aanslagnummer boete"]
+        ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(";"));
+      });
 
-                workdayId: workdayId,
+      return lines.join("\r\n");
+    }
 
-                achternaam: achternaam,
+    async function buildGroupedPdfs(processedRows) {
+      const grouped = { Arval: [], Ayvens: [], Alphabet: [] };
 
-                isVorigeBerijder: isVorigeBerijder,
+      for (const row of processedRows) {
+        const company = ["Arval", "Ayvens", "Alphabet"].includes(row.leasemaatschappij)
+          ? row.leasemaatschappij
+          : "Alphabet";
+        grouped[company].push(row);
+      }
 
-                fileName: file.name
+      const results = {};
 
-            });
+      for (const company of ["Arval", "Ayvens", "Alphabet"]) {
+        const files = grouped[company].map(r => r.pdfFile);
 
+        if (!files.length) {
+          results[company] = null;
+          continue;
         }
 
- 
+        const outDoc = await PDFLib.PDFDocument.create();
 
-        renderTable();
-
-        generateEmails();
-
-        resultsSection.style.display = 'block';
-
-    });
-
- 
-
-    // Helper: Extraheer tekst uit PDF
-
-    async function extractTextFromPdf(file) {
-
-        const arrayBuffer = await file.arrayBuffer();
-
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-
-        let fullText = "";
-
-       
-
-        for (let i = 1; i <= pdf.numPages; i++) {
-
-            const page = await pdf.getPage(i);
-
-            const textContent = await page.getTextContent();
-
-            const pageText = textContent.items.map(item => item.str).join(" ");
-
-            fullText += pageText + "\n";
-
+        for (const file of files) {
+          const bytes = await file.arrayBuffer();
+          const src = await PDFLib.PDFDocument.load(bytes);
+          const copied = await outDoc.copyPages(src, src.getPageIndices());
+          copied.forEach(p => outDoc.addPage(p));
         }
 
-        return fullText;
+        results[company] = await outDoc.save();
+      }
 
+      return results;
     }
 
- 
+    async function downloadAllAsZip() {
+      if (!state.processedRows.length) return;
 
-    // Helper: Regex Matchers
+      const zip = new JSZip();
 
-    function matchKenteken(text) {
+      const wb = buildOverviewWorkbook(state.processedRows);
+      const excelBytes = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      zip.file("Overzicht_boetes.xlsx", excelBytes);
 
-        // Zoekt naar Nederlandse kentekenpatronen (bijv. XX-999-X, 99-XXX-9, etc.)
+      const csv = buildOverviewCsv(state.processedRows);
+      zip.file("Overzicht_boetes.csv", csv);
 
-        const regex = /\b[A-Z0-9]{2}-[A-Z0-9]{3}-[A-Z0-9]{1}\b|\b[0-9]{2}-[A-Z]{3}-[0-9]{1}\b|\b[A-Z]{2}-[0-9]{3}-[A-Z]\b|\b[A-Z]{3}-[0-9]{2}-[A-Z]\b/i;
+      if (state.groupedPdfBytes.Arval) zip.file(state.groupedPdfNames.Arval, state.groupedPdfBytes.Arval);
+      if (state.groupedPdfBytes.Ayvens) zip.file(state.groupedPdfNames.Ayvens, state.groupedPdfBytes.Ayvens);
+      if (state.groupedPdfBytes.Alphabet) zip.file(state.groupedPdfNames.Alphabet, state.groupedPdfBytes.Alphabet);
 
-        const match = text.match(regex);
+      zip.file("Email_Arval.eml", state.emlContents.Arval);
+      zip.file("Email_Ayvens.eml", state.emlContents.Ayvens);
+      zip.file("Email_Alphabet.eml", state.emlContents.Alphabet);
 
-        return match ? match[0].toUpperCase() : null;
-
+      const blob = await zip.generateAsync({ type: "blob" });
+      downloadBlob(blob, "Boete_output.zip");
     }
 
- 
+    // =========================
+    // Render results
+    // =========================
+    function renderRows(rows) {
+      const tbody = $("resultBody");
+      tbody.innerHTML = "";
 
-    function matchDagtekening(text) {
-
-        // Zoekt naar datums zoals 12-04-2026 of 12 april 2026
-
-        const regex = /\b\d{2}[-/\s](?:januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december|\d{2})[-/\s]\d{4}\b/i;
-
-        const match = text.match(regex);
-
-        return match ? match[0] : null;
-
-    }
-
- 
-
-    function matchAanslagnummer(text) {
-
-        // Zoekt specifiek naar CJIB aanslagnummers (vaak 16 cijfers beginnend met een 0 of herkenbaar label)
-
-        const regex = /(?:aanslagnummer|beschikkingsnummer|kenmerk)[:\s]*([0-9\s]{10,20})/i;
-
-        const match = text.match(regex);
-
-        return match ? match[1].replace(/\s/g, '') : null;
-
-    }
-
- 
-
-    function findExcelMatch(kenteken) {
-
-        if (!kenteken || !excelData.length) return null;
-
-        const cleanKenteken = kenteken.replace(/-/g, '').toUpperCase();
-
-       
-
-        return excelData.find(row => {
-
-            // Zoek naar een kolom die op 'kenteken' lijkt
-
-            for (let key in row) {
-
-                if (key.toLowerCase().includes('kenteken')) {
-
-                    const val = String(row[key]).replace(/-/g, '').toUpperCase();
-
-                    if (val === cleanKenteken) return true;
-
-                }
-
-            }
-
-            return false;
-
-        });
-
-    }
-
- 
-
-    function parseDutchDate(dateStr) {
-
-        const months = {
-
-            januari: 0, februari: 1, maart: 2, april: 3, mei: 4, juni: 5,
-
-            juli: 6, augustus: 7, september: 8, oktober: 9, november: 10, december: 11
-
-        };
-
-        const parts = dateStr.split(/[-/\s]/);
-
-        if(parts.length === 3) {
-
-            let day = parseInt(parts[0], 10);
-
-            let month = months[parts[1].toLowerCase()];
-
-            if (month === undefined) month = parseInt(parts[1], 10) - 1;
-
-            let year = parseInt(parts[2], 10);
-
-            return new Date(year, month, day);
-
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        if (r.flagged) tr.classList.add("flagged");
+        if (state.duplicates.has(String(r.aanslagnummer || "").trim()) && r.aanslagnummer) {
+          tr.classList.add("duplicate");
         }
 
-        return new Date(dateStr);
+        const badges = [];
+        if (r.flagged) badges.push(`<span class="pill warn">Vorige berijder</span>`);
+        else badges.push(`<span class="pill">OK</span>`);
 
+        if (state.duplicates.has(String(r.aanslagnummer || "").trim()) && r.aanslagnummer) {
+          badges.push(`<span class="pill dup">Dubbel aanslagnummer</span>`);
+        }
+
+        let note = "";
+        if (r.flagged) {
+          note = "Let op, is voor vorige berijder van dit kenteken.";
+        } else if (!r.foundInExcel) {
+          note = "Kenteken niet gevonden in Excel → Alphabet";
+        }
+
+        tr.innerHTML = `
+          <td>${escapeHtml(r.fileName)}</td>
+          <td>${escapeHtml(r.kenteken || "")}</td>
+          <td>${escapeHtml(safeDateStr(r.dagtekening) || r.dagtekeningRaw || "")}</td>
+          <td>${escapeHtml(safeDateStr(r.pleegdatum) || r.pleegdatumRaw || "")}</td>
+          <td>${escapeHtml(r.aanslagnummer || "")}</td>
+          <td>${escapeHtml(r.leasemaatschappij || "")}</td>
+          <td>${escapeHtml(r.workdayid || "")}</td>
+          <td>${escapeHtml(r.achternaam || "")}</td>
+          <td>${escapeHtml(r.berijder || "")}</td>
+          <td>${escapeHtml(safeDateStr(r.gekoppeldSinds) || r.gekoppeldSindsRaw || "")}</td>
+          <td>${badges.join(" ")}</td>
+          <td>${escapeHtml(note)}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      $("kpiPdfCount").textContent = rows.length;
+      $("kpiArval").textContent = rows.filter(r => r.leasemaatschappij === "Arval").length;
+      $("kpiAyvens").textContent = rows.filter(r => r.leasemaatschappij === "Ayvens").length;
+      $("kpiAlphabet").textContent = rows.filter(r => r.leasemaatschappij === "Alphabet").length;
+      $("kpiFlagged").textContent = rows.filter(r => r.flagged).length;
+      $("kpiDuplicates").textContent = [...state.duplicates].length;
     }
 
- 
+    // =========================
+    // Main process
+    // =========================
+    async function processAll() {
+      if (!librariesLoaded()) return;
 
-    function formatDate(date) {
+      if (!state.pdfFiles.length) {
+        setStatus("Selecteer eerst één of meerdere PDF-bestanden.", "warn");
+        return;
+      }
 
-        if (isNaN(date)) return "-";
+      if (!state.excelFile) {
+        setStatus("Selecteer ook een Excel- of CSV-bestand.", "warn");
+        return;
+      }
 
-        return date.toLocaleDateString('nl-NL');
+      try {
+        $("processBtn").disabled = true;
+        setButtonsEnabled(false);
+        setStatus("Excel/CSV inlezen...");
 
+        state.excelRows = [];
+        state.excelHeaderMap = null;
+        state.processedRows = [];
+        state.duplicates = new Set();
+        state.groupedPdfBytes = { Arval: null, Ayvens: null, Alphabet: null };
+
+        const excel = await readExcel(state.excelFile);
+        state.excelRows = excel.rows;
+        state.excelHeaderMap = excel.headerMap;
+        updateHeaderMapText();
+
+        if (!state.excelRows.length) {
+          throw new Error("Geen bruikbare kentekenregels gevonden in het Excel/CSV-bestand.");
+        }
+
+        const excelIndex = buildIndexByPlate(state.excelRows);
+        const processed = [];
+
+        for (let i = 0; i < state.pdfFiles.length; i++) {
+          const file = state.pdfFiles[i];
+          setStatus(`PDF ${i + 1}/${state.pdfFiles.length} verwerken: ${file.name}`);
+
+          const text = await extractPdfText(file);
+          const pdfData = extractPdfFields(text);
+          const match = matchPlateToExcel(pdfData, excelIndex);
+
+          processed.push({
+            fileName: file.name,
+            pdfFile: file,
+            kenteken: pdfData.kenteken || match.kenteken || "",
+            dagtekening: pdfData.dagtekening,
+            dagtekeningRaw: pdfData.dagtekeningRaw || "",
+            pleegdatum: pdfData.pleegdatum,
+            pleegdatumRaw: pdfData.pleegdatumRaw || "",
+            aanslagnummer: pdfData.aanslagnummer || "",
+            leasemaatschappij: match.lease || "Alphabet",
+            workdayid: match.workdayid || "",
+            achternaam: match.achternaam || "",
+            berijder: match.berijder || "",
+            gekoppeldSinds: match.gekoppeldSinds,
+            gekoppeldSindsRaw: match.gekoppeldSindsRaw || "",
+            flagged: !!match.flagged,
+            previousDriverRow: match.previousDriverRow,
+            foundInExcel: !!match.foundInExcel
+          });
+        }
+
+        state.processedRows = processed;
+        state.duplicates = detectDuplicates(state.processedRows);
+
+        setStatus("Gesplitste PDF’s opbouwen...");
+        state.groupedPdfBytes = await buildGroupedPdfs(state.processedRows);
+
+        rebuildAllEmailPreviews();
+        renderRows(state.processedRows);
+        setButtonsEnabled(true);
+
+        const flaggedCount = state.processedRows.filter(r => r.flagged).length;
+        const duplicateCount = [...state.duplicates].length;
+
+        setStatus(
+          `Klaar.\nPDF’s verwerkt: ${state.processedRows.length}\nGemarkeerd als vorige berijder: ${flaggedCount}\nDubbele aanslagnummers: ${duplicateCount}`,
+          "ok"
+        );
+      } catch (err) {
+        console.error(err);
+        setStatus("Fout tijdens verwerken: " + (err.message || err), "warn");
+      } finally {
+        $("processBtn").disabled = false;
+      }
     }
 
- 
+    // =========================
+    // Event handlers
+    // =========================
+    $("processBtn").addEventListener("click", processAll);
 
-    // 3. Toon resultaten in de HTML tabel
+    $("resetBtn").addEventListener("click", () => {
+      $("pdfFiles").value = "";
+      $("excelFile").value = "";
 
-    function renderTable() {
+      state.pdfFiles = [];
+      state.excelFile = null;
+      state.excelRows = [];
+      state.excelHeaderMap = null;
+      state.processedRows = [];
+      state.duplicates = new Set();
+      state.groupedPdfBytes = { Arval: null, Ayvens: null, Alphabet: null };
+      state.emlContents = { Arval: "", Ayvens: "", Alphabet: "" };
 
-        processedRows.forEach(row => {
+      updateFileLists();
+      updateHeaderMapText();
+      updatePreviewTabs();
+      $("resultBody").innerHTML = "";
 
-            const tr = document.createElement('tr');
+      $("kpiPdfCount").textContent = "0";
+      $("kpiArval").textContent = "0";
+      $("kpiAyvens").textContent = "0";
+      $("kpiAlphabet").textContent = "0";
+      $("kpiFlagged").textContent = "0";
+      $("kpiDuplicates").textContent = "0";
 
-            if (row.isVorigeBerijder) {
-
-                tr.classList.add('warning-row');
-
-            }
-
- 
-
-            tr.innerHTML = `
-
-                <td>${row.kenteken}</td>
-
-                <td>${row.aanslagnummer}</td>
-
-                <td>${row.dagtekening}</td>
-
-                <td>${row.leasemaatschappij}</td>
-
-                <td>${row.berijder}</td>
-
-                <td>${row.gekoppeldSinds}</td>
-
-                <td>${row.isVorigeBerijder ? 'Let op: is voor vorige berijder van dit kenteken!' : 'OK'}</td>
-
-            `;
-
-            resultsTableBody.appendChild(tr);
-
-        });
-
-    }
-
- 
-
-    // 4. Genereer Email Teksten per Leasemaatschappij
-
-    function generateEmails() {
-
-        const emailDiv = document.getElementById('emailTemplates');
-
-        emailDiv.innerHTML = '';
-
- 
-
-        const maatschappijen = ['Arval', 'Ayvens', 'Alphabet'];
-
- 
-
-        maatschappijen.forEach(mij => {
-
-            const mijRows = processedRows.filter(r => r.leasemaatschappij.toLowerCase().includes(mij.toLowerCase()));
-
-            if (mijRows.length === 0) return;
-
- 
-
-            let emailTekst = `Goedendag,\n\nzoals besproken graag deze boetes in behandeling nemen en betalen voor ING.\n`;
-
-           
-
-            const vorigeBerijdersMij = mijRows.filter(r => r.isVorigeBerijder);
-
-            if (vorigeBerijdersMij.length > 0) {
-
-                const kentekensStr = vorigeBerijdersMij.map(r => r.kenteken).join(', ');
-
-                emailTekst += `\nBij kentekens ${kentekensStr} graag belasten op werknemer die op dit kenteken stond geregistreerd op de pleegdatum.\n`;
-
-            }
-
- 
-
-            const box = document.createElement('div');
-
-            box.className = 'email-box';
-
-            box.innerHTML = `<strong>Aan: ${mij}</strong><br><br>${emailTekst}`;
-
-            emailDiv.appendChild(box);
-
-        });
-
-    }
-
- 
-
-    // 5. Download Excel Overzicht Export (Kolom A t/m E)
-
-    document.getElementById('downloadExcelBtn').addEventListener('click', function() {
-
-        const exportData = processedRows.map(row => ({
-
-            "kenteken": row.kenteken,
-
-            "WorkdayID": row.workdayId,
-
-            "Achternaam berijder": row.achternaam,
-
-            "pleegdatum": row.dagtekening,
-
-            "aanslagnummer boete": row.aanslagnummer
-
-        }));
-
- 
-
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
-
-        const workbook = XLSX.utils.book_new();
-
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Boete Overzicht");
-
-       
-
-        XLSX.writeFile(workbook, "Boete_Overzicht_ING.xlsx");
-
+      setButtonsEnabled(false);
+      setStatus("Reset uitgevoerd.");
     });
 
- 
-
-    // 6. Genereer Verzamel-PDF's per Leasemaatschappij
-
-    document.getElementById('downloadPdfsBtn').addEventListener('click', function() {
-
-        const { jsPDF } = window.jspdf;
-
-        const maatschappijen = ['Arval', 'Ayvens', 'Alphabet'];
-
- 
-
-        maatschappijen.forEach(mij => {
-
-            const mijRows = processedRows.filter(r => r.leasemaatschappij.toLowerCase().includes(mij.toLowerCase()));
-
-            if (mijRows.length === 0) return;
-
- 
-
-            const doc = new jsPDF();
-
-            doc.setFont("Helvetica", "bold");
-
-            doc.setFontSize(18);
-
-            doc.text(`Boetes Overzicht - ${mij}`, 15, 20);
-
-           
-
-            doc.setFont("Helvetica", "normal");
-
-            doc.setFontSize(11);
-
-            doc.text(`Gegenereerd op: ${new Date().toLocaleDateString('nl-NL')}`, 15, 28);
-
-            doc.line(15, 32, 195, 32);
-
- 
-
-            let yPos = 42;
-
-            mijRows.forEach((row, index) => {
-
-                if (yPos > 270) { doc.addPage(); yPos = 20; }
-
-               
-
-                doc.setFont("Helvetica", "bold");
-
-                doc.text(`${index + 1}. Kenteken: ${row.kenteken}`, 15, yPos);
-
-                doc.setFont("Helvetica", "normal");
-
-                doc.text(`Aanslagnummer: ${row.aanslagnummer}`, 15, yPos + 6);
-
-                doc.text(`Pleegdatum: ${row.dagtekening}`, 15, yPos + 12);
-
-                doc.text(`Berijder: ${row.berijder} (${row.isVorigeBerijder ? 'VORIGE BERIJDER' : 'HUIDIGE BERIJDER'})`, 15, yPos + 18);
-
-                doc.text(`Bronbestand: ${row.fileName}`, 15, yPos + 24);
-
-               
-
-                yPos += 35;
-
-            });
-
- 
-
-            doc.save(`Boetes_Overzicht_${mij}.pdf`);
-
-        });
-
+    $("downloadExcelBtn").addEventListener("click", () => {
+      const wb = buildOverviewWorkbook(state.processedRows);
+      XLSX.writeFile(wb, "Overzicht_boetes.xlsx");
     });
 
-</script>
+    $("downloadCsvBtn").addEventListener("click", () => {
+      const csv = buildOverviewCsv(state.processedRows);
+      downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8;" }), "Overzicht_boetes.csv");
+    });
 
- 
+    $("downloadZipBtn").addEventListener("click", downloadAllAsZip);
 
+    $("downloadPdfArvalBtn").addEventListener("click", () => {
+      if (!state.groupedPdfBytes.Arval) return alert("Geen Arval-PDF beschikbaar.");
+      downloadBlob(new Blob([state.groupedPdfBytes.Arval], { type: "application/pdf" }), state.groupedPdfNames.Arval);
+    });
+
+    $("downloadPdfAyvensBtn").addEventListener("click", () => {
+      if (!state.groupedPdfBytes.Ayvens) return alert("Geen Ayvens-PDF beschikbaar.");
+      downloadBlob(new Blob([state.groupedPdfBytes.Ayvens], { type: "application/pdf" }), state.groupedPdfNames.Ayvens);
+    });
+
+    $("downloadPdfAlphabetBtn").addEventListener("click", () => {
+      if (!state.groupedPdfBytes.Alphabet) return alert("Geen Alphabet-PDF beschikbaar.");
+      downloadBlob(new Blob([state.groupedPdfBytes.Alphabet], { type: "application/pdf" }), state.groupedPdfNames.Alphabet);
+    });
+
+    $("downloadEmlArvalBtn").addEventListener("click", () => {
+      downloadBlob(new Blob([state.emlContents.Arval], { type: "message/rfc822;charset=utf-8" }), "Email_Arval.eml");
+    });
+
+    $("downloadEmlAyvensBtn").addEventListener("click", () => {
+      downloadBlob(new Blob([state.emlContents.Ayvens], { type: "message/rfc822;charset=utf-8" }), "Email_Ayvens.eml");
+    });
+
+    $("downloadEmlAlphabetBtn").addEventListener("click", () => {
+      downloadBlob(new Blob([state.emlContents.Alphabet], { type: "message/rfc822;charset=utf-8" }), "Email_Alphabet.eml");
+    });
+
+    ["emailArval", "emailAyvens", "emailAlphabet", "emailSubjectPrefix", "emailSignature"].forEach(id => {
+      $(id).addEventListener("input", () => {
+        if (state.processedRows.length) {
+          rebuildAllEmailPreviews();
+        }
+      });
+    });
+
+    $("tabArval").addEventListener("click", () => {
+      state.activePreviewCompany = "Arval";
+      updatePreviewTabs();
+    });
+
+    $("tabAyvens").addEventListener("click", () => {
+      state.activePreviewCompany = "Ayvens";
+      updatePreviewTabs();
+    });
+
+    $("tabAlphabet").addEventListener("click", () => {
+      state.activePreviewCompany = "Alphabet";
+      updatePreviewTabs();
+    });
+
+    $("pdfFiles").addEventListener("change", e => {
+      state.pdfFiles = [...e.target.files].filter(f =>
+        f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")
+      );
+      updateFileLists();
+    });
+
+    $("excelFile").addEventListener("change", e => {
+      state.excelFile = e.target.files[0] || null;
+      updateFileLists();
+    });
+
+    setupDropzone("pdfDropzone", files => {
+      const pdfs = files.filter(f =>
+        f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")
+      );
+      if (pdfs.length) {
+        state.pdfFiles = pdfs;
+        updateFileLists();
+      }
+    });
+
+    setupDropzone("excelDropzone", files => {
+      const file = files.find(f => /\.(xlsx|xls|csv)$/i.test(f.name));
+      if (file) {
+        state.excelFile = file;
+        updateFileLists();
+      }
+    });
+
+    // Init
+    setButtonsEnabled(false);
+    updateFileLists();
+    updateHeaderMapText();
+    updatePreviewTabs();
+    setStatus("Nog niets verwerkt.");
+  </script>
 </body>
-
 </html>
