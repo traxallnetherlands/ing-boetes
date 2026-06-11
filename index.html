@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fleet Fine Matcher & Data Extractor v2</title>
+    <title>Fleet Fine Matcher & Data Extractor v3</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
@@ -41,14 +41,14 @@
         td { padding: 10px; border-bottom: 1px solid #eeeeee; vertical-align: top; }
         tr:nth-child(even) td { background-color: #fafafa; }
         .warning-status { color: #c62828; background-color: #ffebee; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
-        .log-container { background: #222; color: #00ff00; font-family: monospace; padding: 15px; border-radius: 4px; height: 180px; overflow-y: auto; margin-top: 20px; font-size: 12px; }
+        .log-container { background: #222; color: #00ff00; font-family: monospace; padding: 15px; border-radius: 4px; height: 220px; overflow-y: auto; margin-top: 20px; font-size: 12px; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <header>
-        <h1>Fleet Fine Matcher & Data Extractor (Verbeterde Versie)</h1>
+        <h1>Fleet Fine Matcher & Data Extractor v3</h1>
     </header>
 
     <div class="grid">
@@ -66,10 +66,10 @@
         <div class="card">
             <h2>2. Status & Informatie</h2>
             <p style="font-size: 14px; line-height: 1.5; margin-bottom: 10px;">
-                Deze geüpdatete versie bevat <strong>automatische OCR-herkenning (Tesseract)</strong> voor gescande boetes en verbeterde tekstherkenning voor uiteenlopende lay-outs van gemeentes en het CJIB.
+                Deze versie maakt gebruik van een verbeterde visuele OCR-scantechniek die de restricties van lokale browsers omzeilt. 
             </p>
             <p style="font-size: 12px; color: #666;">
-                <em>Tip: Als een PDF een afbeelding/scan is, kan het verwerken door de OCR-analyse een paar seconden langer duren per bestand.</em>
+                <em>Opmerking: Het scannen van afbeeldingen via OCR kost rekenkracht. Het kan een paar seconden per boete duren. Zie het logboek hieronder voor de live voortgang.</em>
             </p>
         </div>
     </div>
@@ -103,11 +103,14 @@
         </table>
     </div>
 
-    <h2>Verwerkingslog (Kijk hier bij fouten)</h2>
+    <h2>Verwerkingslog (Live status)</h2>
     <div id="log" class="log-container">Systeem klaar voor gebruik...<br></div>
 </div>
 
+<canvas id="pdf-canvas" style="display:none;"></canvas>
+
 <script>
+    // Initialiseer PDF.js
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
     let fleetData = [];
@@ -120,6 +123,8 @@
     const statusDiv = document.getElementById('status');
     const logDiv = document.getElementById('log');
     const tableBody = document.querySelector('#result-table tbody');
+    const canvas = document.getElementById('pdf-canvas');
+    const ctx = canvas.getContext('2d');
 
     function log(text) {
         logDiv.innerHTML += `[${new Date().toLocaleTimeString()}] ${text}<br>`;
@@ -141,14 +146,11 @@
 
     function parseDate(dateStr) {
         if (!dateStr) return null;
-        
-        // Formaat: 12-05-2026 of 12/05/2026
         let parts = dateStr.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
         if (parts) return new Date(parts[3], parts[2] - 1, parts[1]);
 
-        // Nederlandse maanden voluit herkenning (bijv. 12 mei 2026 of 12 juni 2026)
         const maanden = {
-            januari:0, feb:1, februari:1, maart:2, april:3, mei:4, juni:5, 
+            januari:0, febr:1, februari:1, maart:2, april:3, mei:4, juni:5, 
             juli:6, augustus:7, aug:7, september:8, sept:8, oktober:9, november:10, december:11
         };
         let cleanStr = dateStr.toLowerCase();
@@ -156,12 +158,9 @@
             if (cleanStr.includes(maand)) {
                 let dagMatch = cleanStr.match(/(\d{1,2})/);
                 let jaarMatch = cleanStr.match(/(\d{4})/);
-                if (dagMatch && jaarMatch) {
-                    return new Date(jaarMatch[1], maanden[maand], dagMatch[1]);
-                }
+                if (dagMatch && jaarMatch) return new Date(jaarMatch[1], maanden[maand], dagMatch[1]);
             }
         }
-        
         let d = new Date(dateStr);
         return isNaN(d.getTime()) ? null : d;
     }
@@ -170,13 +169,11 @@
         try {
             processBtn.disabled = true;
             statusDiv.className = "status-message status-working";
-            statusDiv.innerText = "Bezig met verwerken (dit kan even duren)...";
+            statusDiv.innerText = "Bezig met verwerken (OCR vraagt even tijd)...";
             processedResults = [];
             
-            // 1. Excel inlezen
             await processExcel();
 
-            // 2. PDF's verwerken
             const files = pdfInput.files;
             for (let i = 0; i < files.length; i++) {
                 await processSinglePDF(files[i], i + 1, files.length);
@@ -187,9 +184,9 @@
             statusDiv.className = "status-message status-success";
             statusDiv.innerText = "Succesvol voltooid!";
         } catch (error) {
-            log(`Fout: ${error.message}`);
+            log(`Fout in proces: ${error.message}`);
             statusDiv.className = "status-message status-error";
-            statusDiv.innerText = "Er ging iets mis.";
+            statusDiv.innerText = "Er ging iets mis tijdens de verwerking.";
         } finally {
             processBtn.disabled = false;
         }
@@ -213,7 +210,7 @@
                         }
                         return normalized;
                     });
-                    log(`Excel ingeladen: ${fleetData.length} voertuigen gevonden.`);
+                    log(`Excel succesvol ingeladen. ${fleetData.length} voertuigen geïndexeerd.`);
                     resolve();
                 } catch (err) { reject(err); }
             };
@@ -222,42 +219,52 @@
     }
 
     async function processSinglePDF(file, current, total) {
-        log(`Verwerken [${current}/${total}]: ${file.name}...`);
+        log(`Start verwerken [${current}/${total}]: ${file.name}`);
         const arrayBuffer = await file.arrayBuffer();
-        
         let fullText = "";
+
         try {
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            
+            // Probeer eerst digitale tekst te extraheren
             for (let p = 1; p <= pdf.numPages; p++) {
                 const page = await pdf.getPage(p);
                 const textContent = await page.getTextContent();
                 fullText += textContent.items.map(item => item.str).join(" ") + "\n";
             }
-        } catch (e) {
-            log(`Kan PDF niet direct digitaal lezen, fout: ${e.message}`);
-        }
 
-        // Als er geen tekst uitkomt (minder dan 10 tekens), is het waarschijnlijk een scan/afbeelding -> Start OCR
-        if (fullText.trim().length < 10) {
-            log(`Geen digitale tekst gevonden in ${file.name}. Starten van OCR-beeldherkenning...`);
-            try {
-                // Maak een data-URL van de PDF om hem aan de OCR-lezer aan te bieden
-                const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-                const blobUrl = URL.createObjectURL(blob);
-                
-                const worker = await Tesseract.createWorker();
-                await worker.loadLanguage('nld');
-                await worker.initialize('nld');
-                
-                // Opmerking: Tesseract kan rechtstreeks pagina's uit PDF/afbeeldingen lezen
-                const { data: { text } } = await worker.recognize(blobUrl);
-                fullText = text;
-                await worker.terminate();
-                URL.revokeObjectURL(blobUrl);
-                log(`OCR succesvol afgerond voor ${file.name}.`);
-            } catch (ocrErr) {
-                log(`OCR is mislukt voor ${file.name}: ${ocrErr.message}`);
+            // Als de PDF een scan is (geen digitale tekst gevonden), activeer dan de Canvas + OCR methode
+            if (fullText.trim().length < 10) {
+                log(`Geen selecteerbare tekst in ${file.name}. Pagina omzetten naar afbeelding voor OCR...`);
+                fullText = ""; // Reset
+
+                for (let p = 1; p <= pdf.numPages; p++) {
+                    const page = await pdf.getPage(p);
+                    // Render de pagina op een hogere resolutie (viewport schaal 2.0) voor nauwkeurigere OCR
+                    const viewport = page.getViewport({ scale: 2.0 });
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    const renderContext = { canvasContext: ctx, viewport: viewport };
+                    await page.render(renderContext).promise;
+
+                    // Converteer canvas naar een Base64 afbeelding
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+                    log(`OCR-scan uitvoeren op pagina ${p}...`);
+                    // Voer OCR uit direct via Tesseract zonder externe worker-bestanden (omzeilt de 'undefined' fout lokaal)
+                    const ocrResult = await Tesseract.recognize(dataUrl, 'nld', {
+                        workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/worker.min.js',
+                        langPath: 'https://tessdata.projectnaptha.com/4.0.0',
+                        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@4.0.1/tesseract-core.wasm.js'
+                    });
+                    
+                    fullText += ocrResult.data.text + "\n";
+                }
+                log(`OCR-scan afgerond voor ${file.name}.`);
             }
+        } catch (e) {
+            log(`Fout bij analyseren van ${file.name}: ${e.message}`);
         }
 
         // Data filteren uit de opgebouwde tekst
@@ -266,7 +273,7 @@
 
         processedResults.push({
             kenteken: extracted.kenteken || "NIET GEVONDEN",
-            naamBerijder: match ? match.driverName : "Niet gevonden in Excel",
+            naamBerijder: match ? match.driverName : "Niet gevonden in wagenpark",
             workdayId: match ? match.driverId : "-",
             berijderVanaf: match ? match.driverSinceStr : "-",
             leasemaatschappij: match ? match.supplier : "-",
@@ -280,47 +287,42 @@
         let res = { kenteken: null, aanslagnummer: null, datumOvertreding: null, datumOvertredingStr: null };
         if (!text) return res;
 
-        // Schoon de tekst op (meerdere spaties weghalen voor betere RegEx-matching)
         const cleanText = text.replace(/\s+/g, ' ');
 
-        // 1. Kenteken zoeken (Inclusief patronen met spaties/streepjes en variaties)
-        // Matcht o.a.: XX-XX-XX, XX-XXX-X, X-XXX-XX, 99-XX-XX etc.
+        // 1. Kentekenherkenning (zoekt patronen zoals XX-XX-XX, XX-XXX-X, 99-XXX-9 etc.)
         const lpRegex = /([A-Z0-9]{1,3}[- ]?[A-Z0-9]{2,3}[- ]?[A-Z0-9]{1,3})/gi;
         const matches = cleanText.match(lpRegex);
         if (matches) {
             for (let potential of matches) {
                 let normalized = potential.toUpperCase().replace(/[^A-Z0-9]/g, '');
-                // Geldig NL kenteken is altijd 6 tekens lang
                 if (normalized.length === 6) {
-                    // Formatteer netjes terug naar XX-XX-XX vorm voor de output
-                    res.kenteken = normalized.slice(0,2) + "-" + normalized.slice(2,4) + "-" + normalized.slice(4,6);
-                    // Check of het een geldig patroon is (geen puur getal of pure tekst)
+                    // Check of het geen puur getal of puur tekst is om ruis te filteren
                     if (!/^\d+$/.test(normalized) && !/^[A-Z]+$/.test(normalized)) {
+                        res.kenteken = normalized.slice(0,2) + "-" + normalized.slice(2,4) + "-" + normalized.slice(4,6);
                         break; 
                     }
                 }
             }
         }
 
-        // 2. Aanslagnummer / Beschikkingsnummer zoeken via synoniemen
-        const aanslagRegex = /(?:aanslagnummer|beschikkingsnummer|kenmerk|factuurnummer|documentnummer|rekeningnummer|notanr)[:\s]+([A-Z0-9.-]{6,20})/i;
+        // 2. Aanslagnummer / Beschikkingsnummer / Factuurnummer
+        const aanslagRegex = /(?:aanslagnummer|beschikkingsnummer|kenmerk|factuurnummer|documentnummer|rekeningnummer|notanr|vordering|beschikking)[:\s]+([A-Z0-9.-]{6,20})/i;
         const matchAanslag = cleanText.match(aanslagRegex);
         if (matchAanslag) {
             res.aanslagnummer = matchAanslag[1];
         } else {
-            // Generieke valstrik voor lange CJIB/Gemeente-nummers (vaak tussen de 10 en 16 cijfers)
+            // Backup voor het CJIB: zoekt naar een losstaand getal van 10 tot 16 cijfers
             const backupAanslag = cleanText.match(/\b(\d{10,16})\b/);
             if (backupAanslag) res.aanslagnummer = backupAanslag[1];
         }
 
-        // 3. Datum overtreding zoeken
-        const dateWordsRegex = /(?:datum\s+overtreding|overtredingstijdstip|pleegdatum|datum\s+feit|tijdstip|datum)[:\s]+([0-9]{1,2}[-/\s]+[a-z0-9]{2,9}[-/\s]+[0-9]{4})/i;
+        // 3. Overtredingsdatum
+        const dateWordsRegex = /(?:datum\s+overtreding|overtredingstijdstip|pleegdatum|datum\s+feit|tijdstip|pleegtijdstip)[:\s]+([0-9]{1,2}[-/\s]+[a-z0-9]{2,9}[-/\s]+[0-9]{4})/i;
         const matchDate = cleanText.match(dateWordsRegex);
         if (matchDate) {
             res.datumOvertredingStr = matchDate[1];
             res.datumOvertreding = parseDate(matchDate[1]);
         } else {
-            // Brede datumprikker (DD-MM-YYYY)
             const broadDate = cleanText.match(/\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/);
             if (broadDate) {
                 res.datumOvertredingStr = broadDate[0];
@@ -343,7 +345,7 @@
         if (!matchRow) return null;
 
         const driverName = matchRow['drivername'] || matchRow['naamberijder'] || 'Onbekend';
-        const driverId = matchRow['driverid'] || matchRow['workdayid'] || row['driverid'] || '-';
+        const driverId = matchRow['driverid'] || matchRow['workdayid'] || '-';
         const supplier = matchRow['supplier'] || matchRow['leasemaatschappij'] || '-';
         
         const rawDriverSince = matchRow['driversince'] || matchRow['berijdervanaf'];
@@ -378,7 +380,7 @@
     function renderTable() {
         tableBody.innerHTML = "";
         if (processedResults.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #999; padding: 30px;">Geen resultaten.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #999; padding: 30px;">Geen resultaten gevonden.</td></tr>`;
             return;
         }
         processedResults.forEach(item => {
