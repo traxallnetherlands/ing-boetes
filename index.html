@@ -481,8 +481,8 @@
     // =========================
     // Config / State
     // =========================
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.js";
+    // Fix voor Tesseract conflict: vertel PDF.js de interne worker NIET te gebruiken via Blobs
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "";
 
     const state = {
       pdfFiles: [],
@@ -643,7 +643,6 @@
 
       let m;
 
-      // 19 mei 2026
       m = s.match(/(\d{1,2})\s+([a-zé]+)\s+(\d{4})/i);
       if (m) {
         const day = parseInt(m[1], 10);
@@ -654,7 +653,6 @@
         }
       }
 
-      // 19-05-2026 / 19/05/2026
       m = s.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})/);
       if (m) {
         const day = parseInt(m[1], 10);
@@ -664,7 +662,6 @@
         return new Date(year, month, day);
       }
 
-      // 2026-05-19 / 2026/05/19
       m = s.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
       if (m) {
         const year = parseInt(m[1], 10);
@@ -692,10 +689,6 @@
       if (!record.berijder) return "";
       const parts = String(record.berijder).trim().split(/\s+/);
       return parts.length ? parts[parts.length - 1] : "";
-    }
-
-    function escapeEml(text) {
-      return String(text ?? "").replace(/\n/g, "\r\n");
     }
 
     // =========================
@@ -906,11 +899,12 @@
     }
 
     // =========================
-    // PDF parsing met OCR Fallback
+    // PDF parsing met Tesseract V5 Opbouw
     // =========================
     async function extractPdfText(file) {
       const buffer = await file.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ data: buffer, useWorkerFetch: false });
+      // Handmatig inladen via de hoofdthread om async hangs te voorkomen
+      const loadingTask = pdfjsLib.getDocument({ data: buffer, disableWorker: true });
       const pdf = await loadingTask.promise;
 
       let fullText = "";
@@ -918,13 +912,12 @@
       for (let p = 1; p <= pdf.numPages; p++) {
         const page = await pdf.getPage(p);
         
-        // Try native text extraction first
         const content = await page.getTextContent();
         let pageText = content.items.map(i => i.str).join(" ");
         
-        // If text content is empty or barely exists, treat it as a scanned image and run OCR
+        // OCR Fallback indien digitale tekst ontbreekt
         if (pageText.trim().length < 10) {
-          setStatus(`Scan gedetecteerd in ${file.name} (pagina ${p}/${pdf.numPages}). OCR starten...`, "warn");
+          setStatus(`Gescande PDF herkend in: ${file.name} (P. ${p}/${pdf.numPages}). Initialiseren OCR...`, "warn");
           pageText = await performOcrOnPage(page);
         }
 
@@ -934,12 +927,10 @@
       return fullText.replace(/\s+/g, " ").trim();
     }
 
-    // Helper to render the PDF page to canvas and feed it to Tesseract.js
     async function performOcrOnPage(page) {
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d");
       
-      // Upscale for high accuracy OCR text detection
       const viewport = page.getViewport({ scale: 2.0 });
       canvas.height = viewport.height;
       canvas.width = viewport.width;
@@ -951,14 +942,18 @@
       
       await page.render(renderContext).promise;
 
-      // Extract text in Dutch language ('nld')
-      const { data: { text } } = await Tesseract.recognize(canvas, 'nld', {
-        logger: m => {
-          if (m.status === 'recognizing text') {
-            setStatus(`OCR Analyseert: ${Math.round(m.progress * 100)}%`);
-          }
+      // Veilige Tesseract v5 Worker initialisatie
+      const worker = await Tesseract.createWorker('nld');
+      
+      // Update voortgang live in de interface
+      worker.logger = (m) => {
+        if (m.status === 'recognizing text') {
+          setStatus(`OCR Analyseert afbeelding: ${Math.round(m.progress * 100)}%`);
         }
-      });
+      };
+
+      const { data: { text } } = await worker.recognize(canvas);
+      await worker.terminate();
 
       return text;
     }
@@ -1018,7 +1013,6 @@
       const kenteken = normalizePlate(pdfData.kenteken);
       const rows = excelIndex.get(kenteken) || [];
 
-      // Niet gevonden => Alphabet
       if (!rows.length) {
         return {
           kenteken,
@@ -1196,15 +1190,14 @@
 
         state.duplicates = detectDuplicates(state.processedRows);
 
-        // Render resultaten
         renderResults();
         await generateOutputs();
         setButtonsEnabled(true);
         setStatus("Verwerking succesvol afgerond!", "ok");
 
       } catch (err) {
-        console.error(err);
-        setStatus("Er is een fout opgetreden: " + err.message, "warn");
+        console.error("Fout tijdens verwerking:", err);
+        setStatus("Er is een kritieke fout opgetreden: " + err.message, "warn");
       }
     }
 
@@ -1247,13 +1240,11 @@
     }
 
     async function generateOutputs() {
-      // Genereer E-mail previews
       ["Arval", "Ayvens", "Alphabet"].forEach(comp => {
         state.emlContents[comp] = buildEml(comp, state.processedRows);
       });
       updatePreviewTabs();
 
-      // Samenvoegen van PDF's per maatschappij
       for (const comp of ["Arval", "Ayvens", "Alphabet"]) {
         const compRows = state.processedRows.filter(r => r.leasemaatschappij === comp);
         if (!compRows.length) {
@@ -1271,7 +1262,6 @@
       }
     }
 
-    // Download handlers
     function downloadTabular(type) {
       const headers = ["Bestand", "Kenteken", "Dagtekening", "Pleegdatum", "Aanslagnummer", "Leasemaatschappij", "WorkdayID", "Achternaam berijder", "Berijder", "Gekoppeld sinds", "Opmerking"];
       const data = state.processedRows.map(r => [
@@ -1293,7 +1283,6 @@
     async function downloadZip() {
       const zip = new JSZip();
       
-      // Voeg tabellen toe
       const headers = ["Bestand", "Kenteken", "Dagtekening", "Pleegdatum", "Aanslagnummer", "Leasemaatschappij", "WorkdayID", "Achternaam berijder", "Berijder", "Gekoppeld sinds", "Opmerking"];
       const data = state.processedRows.map(r => [
         r.bestand, r.kenteken, safeDateStr(r.dagtekening), safeDateStr(r.pleegdatum), r.aanslagnummer, r.leasemaatschappij, r.workdayid, r.achternaam, r.berijder, safeDateStr(r.gekoppeldSinds), r.opmerking
@@ -1304,7 +1293,6 @@
       const excelBuf = XLSX.write(wb, { type: "array", bookType: "xlsx" });
       zip.file("Boete_Overzicht.xlsx", excelBuf);
 
-      // Voeg PDFs en EMLs toe per maatschappij
       for (const comp of ["Arval", "Ayvens", "Alphabet"]) {
         if (state.groupedPdfBytes[comp]) {
           zip.file(state.groupedPdfNames[comp], state.groupedPdfBytes[comp]);
